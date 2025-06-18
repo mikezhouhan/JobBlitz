@@ -5,10 +5,14 @@ export class CSVExporter {
   static generateCSV(applicants: ApplicantInfo[]): string {
     const csvData = applicants.map(applicant => ({
       "姓名": applicant.name,
+      "年龄": applicant.age || '',
+      "现居地": applicant.location || '',
       "电话": applicant.phone,
       "邮箱": applicant.email,
       "应聘职位": applicant.position,
-      "申请时间": applicant.applyTime,
+      "实习经历": applicant.internExperience || '',
+      "可到岗时间": applicant.availability || '',
+      "申请时间": new Date(applicant.applyTime).toLocaleString('zh-CN'),
       "状态": applicant.status
     }))
 

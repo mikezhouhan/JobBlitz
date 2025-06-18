@@ -1,0 +1,21 @@
+# HTML 代码片段目录
+
+请将 HTML 代码片段保存在这个目录下：
+
+## 如何获取 HTML 代码：
+
+1. 在浏览器中打开实习僧 HR 页面
+2. 按 F12 打开开发者工具
+3. 在 Elements 标签中找到目标元素
+4. 右键点击元素 → Copy → Copy outerHTML
+5. 将代码粘贴到对应的 .html 文件中
+
+## 建议的文件命名：
+
+- applicant-card.html (申请人卡片)
+- contact-button.html (沟通按钮)
+- chat-input.html (消息输入框)
+- send-button.html (发送按钮)
+- message-item.html (消息条目)
+- applicant-detail.html (申请人详情)
+- filter-controls.html (筛选控件)

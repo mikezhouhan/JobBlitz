@@ -29,10 +29,13 @@
     "permissions": [
       "activeTab",
       "storage",
-      "downloads"
+      "downloads",
+      "scripting",
+      "tabs"
     ],
     "host_permissions": [
-      "https://hr.shixiseng.com/*"
+      "https://hr.shixiseng.com/*",
+      "https://*.shixiseng.com/*"
     ],
     "action": {
       "default_popup": "popup.html",

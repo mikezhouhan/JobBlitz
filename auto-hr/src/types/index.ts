@@ -7,6 +7,14 @@ export interface ApplicantInfo {
   applyTime: string
   status: string
   conversationId?: string
+  // 实习僧特有字段
+  age?: string
+  location?: string
+  internExperience?: string
+  availability?: string
+  workDays?: string
+  education?: string
+  projectExperience?: string
 }
 
 export interface AutoReplyConfig {
