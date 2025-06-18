@@ -62,6 +62,13 @@ class HRAutomation {
             const debugInfo = this.debugPageStructure()
             sendResponse(debugInfo)
             break
+          case 'extractDetailedResume':
+            this.extractDetailedResumeInfo().then(detailInfo => {
+              sendResponse({ success: true, data: detailInfo })
+            }).catch(error => {
+              sendResponse({ success: false, error: error.message })
+            })
+            return true // 表示异步响应
           case 'ping':
             sendResponse({ pong: true, loaded: true })
             break
@@ -82,13 +89,24 @@ class HRAutomation {
     
     this.isRunning = true
     
-    // 实时扫描新加载的申请人
+    // 实时扫描新加载的申请人和详情页面
     this.observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         if (mutation.type === 'childList' && !this.batchProcessing) {
           mutation.addedNodes.forEach((node) => {
             if (node.nodeType === Node.ELEMENT_NODE) {
-              this.checkForApplicantInfo(node as Element)
+              const element = node as Element
+              
+              // 检查是否是申请人卡片
+              this.checkForApplicantInfo(element)
+              
+              // 检查是否是详情弹窗打开
+              if (element.classList?.contains('el-dialog__wrapper') || 
+                  element.querySelector('.el-dialog__wrapper') ||
+                  element.querySelector('.resume-online')) {
+                console.log('📋 检测到详情弹窗打开')
+                this.handleDetailPageOpen()
+              }
             }
           })
         }
@@ -104,6 +122,50 @@ class HRAutomation {
     await this.scanCurrentPageApplicants()
   }
 
+  // 处理详情页面打开
+  private async handleDetailPageOpen() {
+    // 等待页面加载完成
+    await this.delay(1000)
+    
+    // 提取详细信息
+    const detailInfo = await this.extractDetailedResumeInfo()
+    
+    if (detailInfo && detailInfo.name) {
+      // 查找对应的申请人信息并更新
+      const applicants = await this.storage.getApplicants()
+      const existingApplicant = applicants.find(a => a.name === detailInfo.name)
+      
+      if (existingApplicant) {
+        // 合并详细信息
+        const updatedApplicant = {
+          ...existingApplicant,
+          ...detailInfo,
+          needDetailExtraction: false
+        }
+        
+        await this.storage.saveApplicant(updatedApplicant)
+        console.log(`✅ 已更新申请人详细信息: ${detailInfo.name}`)
+      } else {
+        // 如果是新申请人，创建新记录
+        const newApplicant: ApplicantInfo = {
+          id: this.generateApplicantId(detailInfo.name || '', detailInfo.phone || '', detailInfo.email || ''),
+          name: detailInfo.name || '',
+          phone: detailInfo.phone || '',
+          email: detailInfo.email || '',
+          position: detailInfo.position || '未知职位',
+          jobIntention: detailInfo.jobIntention,
+          applyTime: new Date().toISOString(),
+          status: '新申请',
+          resumeDetails: detailInfo.resumeDetails,
+          needDetailExtraction: false
+        }
+        
+        await this.storage.saveApplicant(newApplicant)
+        console.log(`✅ 已保存新申请人详细信息: ${detailInfo.name}`)
+      }
+    }
+  }
+
   // 批量处理主函数
   private async startBatchProcess(config: any) {
     console.log('🚀 开始批量处理申请人')
@@ -114,7 +176,12 @@ class HRAutomation {
       // 1. 先收集所有申请人信息
       await this.scanCurrentPageApplicants()
       
-      // 2. 如果启用自动回复，批量点击沟通按钮
+      // 2. 如果启用详细信息提取，批量点击查看详情
+      if (config.extractDetails) {
+        await this.batchExtractDetailedInfo()
+      }
+      
+      // 3. 如果启用自动回复，批量点击沟通按钮
       if (config.autoReply) {
         await this.batchContactApplicants(config.replyMessage)
       }
@@ -124,6 +191,57 @@ class HRAutomation {
       console.error('❌ 批量处理失败:', error)
     } finally {
       this.batchProcessing = false
+    }
+  }
+
+  // 批量提取详细信息
+  private async batchExtractDetailedInfo() {
+    console.log('📋 开始批量提取详细信息')
+    const applicantCards = this.findAllApplicantCards()
+    
+    for (let i = 0; i < applicantCards.length; i++) {
+      const card = applicantCards[i]
+      const nameElement = card.querySelector('.resume-info__center-name')
+      const name = nameElement?.textContent?.trim() || ''
+      
+      if (name && nameElement) {
+        console.log(`📄 正在提取详细信息: ${name} (${i + 1}/${applicantCards.length})`)
+        
+        // 点击名字打开详情
+        (nameElement as HTMLElement).click()
+        
+        // 等待详情页面加载
+        await this.delay(2000)
+        
+        // 提取详细信息（会自动通过 MutationObserver 触发）
+        // handleDetailPageOpen 会被自动调用
+        
+        // 关闭详情弹窗
+        await this.closeDetailDialog()
+        
+        // 随机延迟避免过快
+        await this.delay(1000 + Math.random() * 2000)
+      }
+    }
+  }
+
+  // 关闭详情弹窗
+  private async closeDetailDialog() {
+    try {
+      // 查找关闭按钮
+      const closeButton = document.querySelector('.el-dialog__close') ||
+                         document.querySelector('.el-dialog__headerbtn') ||
+                         document.querySelector('[aria-label="Close"]')
+      
+      if (closeButton) {
+        (closeButton as HTMLElement).click()
+        await this.delay(500)
+      } else {
+        // 如果没有找到关闭按钮，尝试按ESC键
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      }
+    } catch (error) {
+      console.error('❌ 关闭详情弹窗失败:', error)
     }
   }
 
@@ -249,6 +367,289 @@ class HRAutomation {
     
     console.log('❌ 未找到任何申请人卡片')
     return []
+  }
+
+  // 提取详细简历信息（从详情页面）
+  private async extractDetailedResumeInfo(): Promise<Partial<ApplicantInfo> | null> {
+    try {
+      console.log('📋 开始提取详细简历信息...')
+      
+      const detailInfo: Partial<ApplicantInfo> = {
+        resumeDetails: {
+          educationHistory: [],
+          internshipHistory: [],
+          projectHistory: [],
+          academicHistory: [],
+          honors: [],
+          skills: [],
+          otherSections: []
+        }
+      }
+
+      // 1. 提取基本信息
+      const nameElement = document.querySelector('.main-name')
+      if (nameElement) {
+        detailInfo.name = nameElement.textContent?.trim()
+      }
+
+      // 2. 提取联系方式
+      const phoneElement = document.querySelector('.phone-email-item .icon_resume_phone')?.parentElement
+      const emailElement = document.querySelector('.phone-email-item .icon_resume_email')?.parentElement
+      if (phoneElement) {
+        detailInfo.phone = phoneElement.textContent?.trim().replace(/[^\d+\s()-]/g, '') || ''
+      }
+      if (emailElement) {
+        detailInfo.email = emailElement.textContent?.trim() || ''
+      }
+
+      // 3. 提取求职意向
+      const jobIntentionElement = document.querySelector('.exp-jobs')
+      if (jobIntentionElement) {
+        const text = jobIntentionElement.textContent?.trim() || ''
+        const match = text.match(/求职意向[：:]\s*(.+)/)
+        if (match) {
+          detailInfo.jobIntention = match[1].trim()
+        }
+      }
+
+      // 4. 提取在线简历各个部分
+      const resumeSections = document.querySelectorAll('.resume-online-item')
+      
+      for (const section of resumeSections) {
+        const titleElement = section.querySelector('.resume-online-item__title')
+        const contentElement = section.querySelector('.resume-online-item__content')
+        
+        if (!titleElement || !contentElement) continue
+        
+        const sectionTitle = titleElement.textContent?.trim() || ''
+        const sectionContent = contentElement.innerHTML || ''
+        
+        console.log(`📄 处理简历部分: ${sectionTitle}`)
+        
+        switch (sectionTitle) {
+          case '教育经历':
+            this.extractEducationHistory(contentElement, detailInfo.resumeDetails!)
+            break
+          case '实习经历':
+          case '工作经历':
+            this.extractInternshipHistory(contentElement, detailInfo.resumeDetails!)
+            break
+          case '项目经历':
+            this.extractProjectHistory(contentElement, detailInfo.resumeDetails!)
+            break
+          case '学术经历':
+            this.extractAcademicHistory(contentElement, detailInfo.resumeDetails!)
+            break
+          case '荣誉奖项':
+            this.extractHonors(contentElement, detailInfo.resumeDetails!)
+            break
+          case '技能':
+          case '专业技能':
+            this.extractSkills(contentElement, detailInfo.resumeDetails!)
+            break
+          case '自我评价':
+            detailInfo.resumeDetails!.selfEvaluation = contentElement.textContent?.trim()
+            break
+          default:
+            // 其他未识别的部分
+            detailInfo.resumeDetails!.otherSections?.push({
+              title: sectionTitle,
+              content: contentElement.textContent?.trim() || ''
+            })
+        }
+      }
+
+      console.log('✅ 详细简历信息提取完成:', detailInfo)
+      return detailInfo
+      
+    } catch (error) {
+      console.error('❌ 提取详细简历信息失败:', error)
+      return null
+    }
+  }
+
+  // 提取教育经历
+  private extractEducationHistory(element: Element, resumeDetails: any) {
+    try {
+      const items = element.querySelectorAll('.experience-item') || [element]
+      
+      for (const item of items) {
+        const periodElement = item.querySelector('.experience-time')
+        const schoolElement = item.querySelector('.experience-item__title') || item.querySelector('h4')
+        const majorElement = item.querySelector('.experience-item__desc') || item.querySelector('p')
+        const descElement = item.querySelector('.experience-item__detail')
+        
+        const education = {
+          period: periodElement?.textContent?.trim() || '',
+          school: schoolElement?.textContent?.trim() || '',
+          major: '',
+          degree: '',
+          description: descElement?.textContent?.trim() || ''
+        }
+        
+        // 从专业信息中提取学历和专业
+        const majorText = majorElement?.textContent?.trim() || ''
+        const majorMatch = majorText.match(/(.+?)\s*[·|｜]\s*(.+)/)
+        if (majorMatch) {
+          education.major = majorMatch[1].trim()
+          education.degree = majorMatch[2].trim()
+        } else {
+          education.major = majorText
+        }
+        
+        if (education.school) {
+          resumeDetails.educationHistory.push(education)
+        }
+      }
+    } catch (error) {
+      console.error('提取教育经历失败:', error)
+    }
+  }
+
+  // 提取实习经历
+  private extractInternshipHistory(element: Element, resumeDetails: any) {
+    try {
+      const items = element.querySelectorAll('.experience-item') || [element]
+      
+      for (const item of items) {
+        const periodElement = item.querySelector('.experience-time')
+        const companyElement = item.querySelector('.experience-item__title') || item.querySelector('h4')
+        const positionElement = item.querySelector('.experience-item__desc') || item.querySelector('p')
+        const descElement = item.querySelector('.experience-item__detail')
+        
+        const internship = {
+          period: periodElement?.textContent?.trim() || '',
+          company: companyElement?.textContent?.trim() || '',
+          position: positionElement?.textContent?.trim() || '',
+          description: descElement?.textContent?.trim() || ''
+        }
+        
+        if (internship.company) {
+          resumeDetails.internshipHistory.push(internship)
+        }
+      }
+    } catch (error) {
+      console.error('提取实习经历失败:', error)
+    }
+  }
+
+  // 提取项目经历
+  private extractProjectHistory(element: Element, resumeDetails: any) {
+    try {
+      const items = element.querySelectorAll('.experience-item') || [element]
+      
+      for (const item of items) {
+        const periodElement = item.querySelector('.experience-time')
+        const nameElement = item.querySelector('.experience-item__title') || item.querySelector('h4')
+        const roleElement = item.querySelector('.experience-item__desc') || item.querySelector('p')
+        const descElement = item.querySelector('.experience-item__detail')
+        
+        const project = {
+          period: periodElement?.textContent?.trim() || '',
+          name: nameElement?.textContent?.trim() || '',
+          role: roleElement?.textContent?.trim() || '',
+          description: descElement?.textContent?.trim() || ''
+        }
+        
+        if (project.name) {
+          resumeDetails.projectHistory.push(project)
+        }
+      }
+    } catch (error) {
+      console.error('提取项目经历失败:', error)
+    }
+  }
+
+  // 提取学术经历
+  private extractAcademicHistory(element: Element, resumeDetails: any) {
+    try {
+      const items = element.querySelectorAll('.experience-item') || [element]
+      
+      for (const item of items) {
+        const periodElement = item.querySelector('.experience-time')
+        const titleElement = item.querySelector('.experience-item__title') || item.querySelector('h4')
+        const typeElement = item.querySelector('.experience-item__desc') || item.querySelector('p')
+        const descElement = item.querySelector('.experience-item__detail')
+        
+        const academic = {
+          period: periodElement?.textContent?.trim() || '',
+          title: titleElement?.textContent?.trim() || '',
+          type: typeElement?.textContent?.trim() || '',
+          description: descElement?.textContent?.trim() || ''
+        }
+        
+        if (academic.title) {
+          resumeDetails.academicHistory.push(academic)
+        }
+      }
+    } catch (error) {
+      console.error('提取学术经历失败:', error)
+    }
+  }
+
+  // 提取荣誉奖项
+  private extractHonors(element: Element, resumeDetails: any) {
+    try {
+      const items = element.querySelectorAll('.honor-item') || element.querySelectorAll('li') || [element]
+      
+      for (const item of items) {
+        const text = item.textContent?.trim() || ''
+        // 尝试解析格式: "2023-05 国家级 奖项名称"
+        const match = text.match(/(\d{4}-\d{2})?\s*([^\s]+级)?\s*(.+)/)
+        
+        if (match) {
+          const honor = {
+            date: match[1] || '',
+            level: match[2] || '',
+            name: match[3]?.trim() || text
+          }
+          
+          if (honor.name) {
+            resumeDetails.honors.push(honor)
+          }
+        } else if (text) {
+          // 如果无法解析，直接保存原文
+          resumeDetails.honors.push({
+            date: '',
+            level: '',
+            name: text
+          })
+        }
+      }
+    } catch (error) {
+      console.error('提取荣誉奖项失败:', error)
+    }
+  }
+
+  // 提取技能
+  private extractSkills(element: Element, resumeDetails: any) {
+    try {
+      const skillText = element.textContent?.trim() || ''
+      
+      // 尝试按类别分组（如：编程语言：xxx；工具：xxx）
+      const categoryMatches = skillText.match(/([^：:]+)[：:]([^；;]+)/g)
+      
+      if (categoryMatches) {
+        for (const match of categoryMatches) {
+          const [category, items] = match.split(/[：:]/)
+          resumeDetails.skills.push({
+            category: category.trim(),
+            items: items.split(/[,，、]/).map(item => item.trim())
+          })
+        }
+      } else {
+        // 如果没有明确分类，作为一个整体
+        const items = skillText.split(/[,，、；;]/).map(item => item.trim()).filter(item => item)
+        if (items.length > 0) {
+          resumeDetails.skills.push({
+            category: '技能',
+            items: items
+          })
+        }
+      }
+    } catch (error) {
+      console.error('提取技能失败:', error)
+    }
   }
 
   // 查找沟通按钮 - 基于真实HTML结构
@@ -427,6 +828,15 @@ class HRAutomation {
       const phone = '' // 需要进一步点击获取
       const email = '' // 需要进一步点击获取
 
+      // 6. 点击查看更多详情（如果有详情按钮）
+      const detailButton = element.querySelector('.resume-info__center-name') || 
+                          element.querySelector('a[href*="detail"]')
+      
+      if (detailButton) {
+        // 标记需要获取详细信息
+        console.log('📋 发现详情链接，准备获取更多信息')
+      }
+
       const applicantInfo: ApplicantInfo = {
         id: this.generateApplicantId(name, phone, email),
         name: name,
@@ -441,7 +851,8 @@ class HRAutomation {
         availability: availability,
         workDays: workDays,
         education: education,
-        projectExperience: projectExperience
+        projectExperience: projectExperience,
+        needDetailExtraction: true  // 标记需要提取详细信息
       }
 
       console.log('📝 提取申请人信息:', applicantInfo)

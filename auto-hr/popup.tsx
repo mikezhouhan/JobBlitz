@@ -6,6 +6,7 @@ function IndexPopup() {
   const [pageStats, setPageStats] = useState({ totalApplicants: 0 })
   const [replyMessage, setReplyMessage] = useState("您好！感谢您的申请，我们已收到您的简历，会尽快安排面试官查看并与您联系。期待与您进一步沟通！")
   const [processing, setProcessing] = useState(false)
+  const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -22,13 +23,38 @@ function IndexPopup() {
       }
     }
     
+    // 监听存储变化，实时更新数据
+    const storageListener = (changes: any, namespace: string) => {
+      if (namespace === 'local') {
+        if (changes.applicants) {
+          const newApplicants = changes.applicants.newValue || []
+          setApplicantCount(newApplicants.length)
+          console.log(`数据已更新，当前总计: ${newApplicants.length} 条`)
+        }
+        if (changes.batchProcessing) {
+          const processing = changes.batchProcessing.newValue
+          if (processing && processing.active) {
+            const pageInfo = processing.currentPage ? '(处理中...)' : ''
+            setStatus(`正在处理... 已完成 ${processing.processedCount} 个 ${pageInfo}`)
+          }
+        }
+      }
+    }
+    
     if (chrome.runtime?.onMessage) {
       chrome.runtime.onMessage.addListener(messageListener)
+    }
+    
+    if (chrome.storage?.onChanged) {
+      chrome.storage.onChanged.addListener(storageListener)
     }
     
     return () => {
       if (chrome.runtime?.onMessage) {
         chrome.runtime.onMessage.removeListener(messageListener)
+      }
+      if (chrome.storage?.onChanged) {
+        chrome.storage.onChanged.removeListener(storageListener)
       }
     }
   }, [])
@@ -197,9 +223,9 @@ function IndexPopup() {
           setStatus("批量处理已启动，请勿关闭此页面")
         }
         
-        // 定期更新进度
+        // 定期更新进度和数据数量
         const progressInterval = setInterval(async () => {
-          const result = await chrome.storage.local.get(['batchProcessing'])
+          const result = await chrome.storage.local.get(['batchProcessing', 'applicants'])
           if (result.batchProcessing) {
             if (!result.batchProcessing.active) {
               clearInterval(progressInterval)
@@ -215,7 +241,12 @@ function IndexPopup() {
               setStatus(`正在处理... 已完成 ${result.batchProcessing.processedCount} 个 ${currentPage}`)
             }
           }
-        }, 2000)
+          
+          // 实时更新收集的数据数量
+          if (result.applicants) {
+            setApplicantCount(result.applicants.length)
+          }
+        }, 1000)
       }
     } catch (error) {
       setStatus(`批量处理失败: ${error.message}`)
@@ -225,6 +256,17 @@ function IndexPopup() {
 
   // 仅收集数据，不发送消息
   const handleScanOnly = async () => {
+    if (scanning) {
+      // 停止收集
+      setScanning(false)
+      await chrome.storage.local.set({ 
+        scanProcessing: { active: false } 
+      })
+      setStatus("已停止收集")
+      return
+    }
+    
+    setScanning(true)
     setStatus("正在扫描申请人信息...")
     
     try {
@@ -235,6 +277,11 @@ function IndexPopup() {
           setStatus("扫描完成")
         } catch (msgError) {
           console.log("内容脚本未响应，使用直接执行方式")
+          
+          // 设置扫描状态
+          await chrome.storage.local.set({ 
+            scanProcessing: { active: true } 
+          })
           
           // 直接在页面上执行扫描
           const results = await chrome.scripting.executeScript({
@@ -262,10 +309,15 @@ function IndexPopup() {
         setTimeout(() => {
           loadData()
           getPageStats()
+          setScanning(false)
         }, 2000)
       }
     } catch (error) {
       setStatus(`扫描失败: ${error.message}`)
+      setScanning(false)
+    } finally {
+      // 确保重置扫描状态
+      setScanning(false)
     }
   }
 
@@ -381,12 +433,16 @@ function IndexPopup() {
   }
 
   const generateSimpleCSV = (applicants: any[]) => {
-    const headers = ['姓名', '年龄', '现居地', '职位', '实习经历', '可到岗时间', '工作天数', '教育背景', '项目经历', '申请时间']
+    const headers = ['姓名', '手机号', '邮箱', '年龄', '现居地', '投递职位', '求职意向', '在线简历', '实习经历', '可到岗时间', '工作天数', '教育背景', '项目经历', '申请时间']
     const rows = applicants.map(a => [
       a.name || '',
+      a.phone || '',
+      a.email || '',
       a.age || '',
       a.location || '',
       a.position || '',
+      a.jobIntention || '',
+      a.onlineResume || '',
       a.internExperience || '',
       a.availability || '',
       a.workDays || '',
@@ -491,7 +547,7 @@ function IndexPopup() {
             style={{
               flex: 1,
               padding: '8px 12px',
-              backgroundColor: '#6c757d',
+              backgroundColor: scanning ? '#dc3545' : '#6c757d',
               color: 'white',
               border: 'none',
               borderRadius: 4,
@@ -499,7 +555,7 @@ function IndexPopup() {
               cursor: 'pointer'
             }}
           >
-            📊 仅收集数据
+            {scanning ? '⏹ 停止收集' : '📊 仅收集数据'}
           </button>
           
           <button
@@ -578,16 +634,16 @@ function IndexPopup() {
 
       <div style={{ fontSize: 10, color: '#666', textAlign: 'center', lineHeight: 1.5 }}>
         <div>💡 使用说明:</div>
-        <div>1. 在申请人列表页面点击"批量沟通"</div>
-        <div>2. 系统会自动点击每个申请人的沟通按钮</div>
-        <div>3. 发送设定的回复消息并收集联系方式</div>
-        <div>4. 完成后可导出CSV文件</div>
+        <div>1. 在申请人列表页面点击"批量沟通"或"仅收集数据"</div>
+        <div>2. 系统会自动点击每个申请人进入详情页</div>
+        <div>3. 获取手机号和邮箱，并发送沟通消息（如果选择批量沟通）</div>
+        <div>4. 自动处理所有分页，完成后可导出CSV文件</div>
       </div>
     </div>
   )
 }
 
-// 直接在页面上执行的扫描函数（支持分页）
+// 直接在页面上执行的扫描函数（支持分页和获取联系方式）
 function scanApplicantsDirectly() {
   console.log("🔍 开始扫描所有页面的申请人信息")
   
@@ -616,12 +672,22 @@ function scanApplicantsDirectly() {
     return null
   }
   
-  // 扫描单页
-  function scanCurrentPage() {
+  // 扫描单页（点击进入详情页获取联系方式）
+  async function scanCurrentPage() {
     const cards = document.querySelectorAll('.resume-item')
     const pageApplicants = []
     
-    cards.forEach((card, index) => {
+    for (let index = 0; index < cards.length; index++) {
+      // 检查是否应该停止
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        const result = await chrome.storage.local.get(['scanProcessing'])
+        if (result.scanProcessing && !result.scanProcessing.active) {
+          console.log("扫描已被用户停止")
+          break
+        }
+      }
+      
+      const card = cards[index]
       try {
         // 提取姓名
         const nameElement = card.querySelector('.resume-info__center-name')
@@ -636,6 +702,35 @@ function scanApplicantsDirectly() {
         const locationMatch = detailText.match(/现居：([^实]+)/)
         const internMatch = detailText.match(/(实习\d+次)/)
         
+        // 从卡片顶部获取投递职位（通常在卡片最上方，旁边是投递时间和转发按钮）
+        let listPosition = ''
+        // 查找卡片顶部区域
+        const cardHeader = card.querySelector('.resume-item__header, .card-header, [class*="header"]')
+        if (cardHeader) {
+          // 在顶部区域查找职位
+          const headerText = cardHeader.textContent || ''
+          // 排除时间和按钮文本
+          const positionMatch = headerText.match(/^([^\d]+?)(?:\s*\d{4}|\s*转发|$)/)
+          if (positionMatch) {
+            listPosition = positionMatch[1].trim()
+            console.log(`从卡片顶部获取职位: ${listPosition}`)
+          }
+        }
+        
+        // 如果没找到，尝试其他选择器
+        if (!listPosition) {
+          const topElements = card.querySelectorAll('.resume-item > div:first-child, .resume-item > *:first-child')
+          for (const elem of topElements) {
+            const text = elem.textContent?.trim() || ''
+            if (text && text.length > 2 && text.length < 50 && 
+                !text.includes('转发') && !text.match(/\d{4}-\d{2}-\d{2}/)) {
+              listPosition = text.split(/\s{2,}/)[0] // 取第一部分（通常是职位）
+              console.log(`从卡片顶部元素获取职位: ${listPosition}`)
+              break
+            }
+          }
+        }
+        
         const applicant = {
           id: `${Date.now()}_${pageNumber}_${index}`,
           name: name,
@@ -644,17 +739,350 @@ function scanApplicantsDirectly() {
           internExperience: internMatch ? internMatch[1] : '',
           phone: '',
           email: '',
-          position: '未知职位',
+          position: listPosition || '未知职位',
+          jobIntention: '',  // 求职意向
+          onlineResume: '',  // 在线简历
           applyTime: new Date().toISOString(),
           status: '新申请',
           pageNumber: pageNumber
         }
         
+        // 点击卡片进入详情页
+        console.log(`点击第 ${index + 1} 个申请人卡片进入详情页...`)
+        const cardClickable = card.querySelector('.resume-info__center') || card
+        ;(cardClickable as HTMLElement).click()
+        
+        // 等待详情页加载
+        console.log(`等待详情页加载...`)
+        await new Promise(resolve => setTimeout(resolve, 3000))
+        
+        // 检查页面是否加载完成（查找关键元素）
+        let retryCount = 0
+        const maxRetries = 5
+        while (retryCount < maxRetries) {
+          // 检查是否有加载指示器
+          const loadingMask = document.querySelector('.el-loading-mask, .loading, [class*="loading"]')
+          if (loadingMask) {
+            console.log(`检测到加载指示器，等待加载完成...`)
+            await new Promise(resolve => setTimeout(resolve, 1000))
+            continue
+          }
+          
+          // 检查联系信息元素
+          const phoneEmailElements = document.querySelectorAll('.phone-email-item')
+          const phoneEmailContainer = document.querySelector('.phone-email')
+          
+          if (phoneEmailElements.length >= 2 || (phoneEmailContainer && phoneEmailContainer.textContent.includes('@'))) {
+            console.log(`找到联系信息元素，页面加载完成`)
+            // 再等待一下确保内容完全渲染
+            await new Promise(resolve => setTimeout(resolve, 1000))
+            break
+          }
+          
+          retryCount++
+          console.log(`联系信息尚未加载，等待中... (重试 ${retryCount}/${maxRetries})`)
+          await new Promise(resolve => setTimeout(resolve, 2000))
+        }
+        
+        // 查找联系方式（优先查找 phone-email 组合元素）
+        let phoneNumber = ''
+        let email = ''
+        
+        // 首先查找包含手机和邮箱的组合元素
+        // 优先查找单独的 phone-email-item 元素
+        const phoneItems = document.querySelectorAll('.phone-email-item')
+        if (phoneItems.length >= 2) {
+          // 如果有单独的元素，使用它们
+          phoneItems.forEach(item => {
+            const text = item.textContent || ''
+            
+            // 检查是否包含手机号
+            const phoneMatch = text.match(/(?:\+86\s*)?1[3-9]\d{9}/)
+            if (phoneMatch && !phoneNumber) {
+              phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
+              console.log("从 phone-email-item 提取手机号:", phoneNumber)
+            }
+            
+            // 检查是否包含邮箱
+            const emailMatch = text.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
+            if (emailMatch && !email) {
+              email = emailMatch[0]
+              console.log("从 phone-email-item 提取邮箱:", email)
+            }
+          })
+        }
+        
+        // 如果没有找到单独的元素，尝试从组合元素中提取
+        if (!phoneNumber || !email) {
+          const phoneEmailElement = document.querySelector('.phone-email, [class*="phone-email"]')
+          if (phoneEmailElement && !phoneEmailElement.classList.contains('phone-email-item')) {
+            const text = phoneEmailElement.textContent || ''
+            console.log("找到 phone-email 组合元素:", text)
+            
+            // 提取手机号（可能带有 +86 前缀）
+            if (!phoneNumber) {
+              const phoneMatch = text.match(/(?:\+86\s*)?1[3-9]\d{9}/)
+              if (phoneMatch) {
+                phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
+                console.log("提取手机号:", phoneNumber)
+              }
+            }
+            
+            // 提取邮箱（使用更严格的正则，避免把手机号当作邮箱的一部分）
+            if (!email) {
+              // 先尝试在手机号之后查找邮箱
+              const afterPhone = text.substring(text.indexOf(phoneNumber) + phoneNumber.length)
+              const emailMatch = afterPhone.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/) ||
+                                text.match(/(?<!\d)[\w.-]+@[\w.-]+\.[\w]{2,}/)
+              if (emailMatch) {
+                email = emailMatch[0]
+                console.log("提取邮箱:", email)
+              }
+            }
+          }
+        }
+        
+        // 如果组合元素中没找到，尝试单独查找
+        if (!phoneNumber) {
+          const phoneSelectors = [
+            '[class*="phone"]:not(.phone-email)',
+            '[class*="mobile"]',
+            '[class*="tel"]',
+            'span:has-text("手机")',
+            'span:has-text("电话")',
+            '*[title*="手机"]',
+            '*[title*="电话"]'
+          ]
+          
+          for (const selector of phoneSelectors) {
+            try {
+              const phoneElement = document.querySelector(selector)
+              if (phoneElement) {
+                const text = phoneElement.textContent || ''
+                const phoneMatch = text.match(/(?:\+86\s*)?1[3-9]\d{9}/)
+                if (phoneMatch) {
+                  phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
+                  console.log("找到手机号:", phoneNumber)
+                  break
+                }
+              }
+            } catch (e) {}
+          }
+        }
+        
+        if (!email) {
+          const emailSelectors = [
+            '[class*="email"]:not(.phone-email)',
+            '[class*="mail"]',
+            'span:has-text("邮箱")',
+            'span:has-text("Email")',
+            '*[title*="邮箱"]',
+            '*[title*="email"]'
+          ]
+          
+          for (const selector of emailSelectors) {
+            try {
+              const emailElement = document.querySelector(selector)
+              if (emailElement) {
+                const text = emailElement.textContent || ''
+                const emailMatch = text.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
+                if (emailMatch) {
+                  email = emailMatch[0]
+                  console.log("找到邮箱:", email)
+                  break
+                }
+              }
+            } catch (e) {}
+          }
+        }
+        
+        // 最后的备选方案：在页面文本中查找
+        if (!phoneNumber || !email) {
+          const bodyText = document.body.textContent || ''
+          
+          if (!phoneNumber) {
+            const phoneMatch = bodyText.match(/(?:\+86\s*)?1[3-9]\d{9}/)
+            if (phoneMatch) {
+              phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
+              console.log("从页面文本中找到手机号:", phoneNumber)
+            }
+          }
+          
+          if (!email) {
+            const emailMatch = bodyText.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
+            if (emailMatch) {
+              email = emailMatch[0]
+              console.log("从页面文本中找到邮箱:", email)
+            }
+          }
+        }
+        
+        // 查找求职意向
+        console.log("查找求职意向...")
+        let jobIntention = ''
+        
+        // 基于HTML结构查找求职意向
+        const expJobsElement = document.querySelector('.exp-jobs')
+        if (expJobsElement) {
+          const text = expJobsElement.textContent?.trim() || ''
+          const match = text.match(/求职意向[：:]\s*(.+)/)
+          if (match) {
+            jobIntention = match[1].trim()
+            console.log(`找到求职意向: ${jobIntention}`)
+          }
+        }
+        
+        // 备选方法：在 main-detail-sub 中查找
+        if (!jobIntention) {
+          const mainDetailSub = document.querySelector('.main-detail-sub')
+          if (mainDetailSub) {
+            const spans = mainDetailSub.querySelectorAll('span')
+            spans.forEach(span => {
+              const text = span.textContent?.trim() || ''
+              if (text.includes('求职意向')) {
+                const match = text.match(/求职意向[：:]\s*(.+)/)
+                if (match) {
+                  jobIntention = match[1].trim()
+                  console.log(`从 main-detail-sub 找到求职意向: ${jobIntention}`)
+                }
+              }
+            })
+          }
+        }
+        
+        // 查找投递职位（从详情页）
+        console.log("查找投递职位（详情页）...")
+        let detailPosition = ''
+        const positionTitleElement = document.querySelector('.resume-tools__title')
+        if (positionTitleElement) {
+          const text = positionTitleElement.textContent?.trim() || ''
+          const match = text.match(/投递职位[：:]\s*(.+?)(?:·|$)/)
+          if (match) {
+            detailPosition = match[1].trim()
+            console.log(`找到投递职位: ${detailPosition}`)
+          } else if (text) {
+            // 如果没有"投递职位："前缀，尝试直接使用文本
+            detailPosition = text.replace(/·.+$/, '').trim()
+            console.log(`找到投递职位（无前缀）: ${detailPosition}`)
+          }
+        }
+        
+        // 如果详情页找到了职位，优先使用详情页的
+        if (detailPosition) {
+          applicant.position = detailPosition
+        }
+        
+        // 处理在线简历
+        console.log("处理在线简历...")
+        let onlineResume = ''
+        const resumeOnlineDiv = document.querySelector('.resume-online')
+        if (resumeOnlineDiv) {
+          // 获取所有section的内容
+          const allSections = resumeOnlineDiv.querySelectorAll('.resume-online-item')
+          const resumeContent = []
+          
+          allSections.forEach(section => {
+            const title = section.querySelector('.resume-online-item__title')?.textContent?.trim() || ''
+            let content = section.querySelector('.resume-online-item__content')?.textContent?.trim() || ''
+            if (title && content) {
+              // 替换换行符为\n字符串，避免破坏CSV结构
+              content = content.replace(/\r\n/g, '\\n').replace(/\n/g, '\\n').replace(/\r/g, '\\n')
+              resumeContent.push(`【${title}】${content}`)
+            }
+          })
+          
+          if (resumeContent.length > 0) {
+            onlineResume = resumeContent.join(' | ')
+            console.log(`找到在线简历完整内容: ${onlineResume.substring(0, 200)}...`)
+          } else {
+            // 如果没有找到内容，尝试获取所有sections的标题
+            const resumeSections = resumeOnlineDiv.querySelectorAll('.resume-online-item__title')
+            const sectionTitles = Array.from(resumeSections).map(el => el.textContent?.trim()).filter(Boolean)
+            if (sectionTitles.length > 0) {
+              onlineResume = `在线简历 - 包含: ${sectionTitles.join(', ')}`
+              console.log(`找到在线简历结构: ${onlineResume}`)
+            } else {
+              onlineResume = '在线简历（已查看）'
+            }
+          }
+        }
+        
+        // 更新申请人信息
+        applicant.phone = phoneNumber
+        applicant.email = email
+        applicant.jobIntention = jobIntention
+        applicant.onlineResume = onlineResume
+        
+        console.log(`申请人: ${name}, 投递职位: ${applicant.position}, 求职意向: ${jobIntention || '未找到'}, 在线简历: ${onlineResume || '未找到'}, 手机: ${phoneNumber || '未找到'}, 邮箱: ${email || '未找到'}`)
+        
+        // 如果没有找到邮箱，再等待一下并重试
+        if (!email && retryCount < 3) {
+          console.log(`邮箱未找到，再等待2秒后重试提取...`)
+          await new Promise(resolve => setTimeout(resolve, 2000))
+          
+          // 重新尝试找邮箱
+          const phoneItems2 = document.querySelectorAll('.phone-email-item')
+          phoneItems2.forEach(item => {
+            const text = item.textContent || ''
+            const emailMatch = text.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
+            if (emailMatch && !email) {
+              email = emailMatch[0]
+              console.log(`重试后找到邮箱: ${email}`)
+              applicant.email = email
+            }
+          })
+        }
+        
+        // 关闭弹窗返回列表页面
+        console.log("查找关闭按钮...")
+        
+        // 查找弹窗关闭按钮（通常在右上角）
+        const closeSelectors = [
+          '.el-dialog__headerbtn',  // Element UI dialog close button
+          '.el-dialog__close',      // Element UI close icon
+          '.el-icon-close',         // Element UI close icon
+          'button[aria-label="Close"]',
+          'button[aria-label="关闭"]',
+          '.dialog-close',
+          '.modal-close',
+          '[class*="close"]:not(.phone-email)',
+          'i.el-dialog__close'
+        ]
+        
+        let closeButton = null
+        for (const selector of closeSelectors) {
+          closeButton = document.querySelector(selector)
+          if (closeButton) {
+            console.log(`找到关闭按钮: ${selector}`)
+            break
+          }
+        }
+        
+        if (closeButton) {
+          console.log("点击关闭按钮返回列表")
+          ;(closeButton as HTMLElement).click()
+        } else {
+          console.log("未找到关闭按钮，尝试ESC键")
+          // 尝试按ESC键关闭弹窗
+          document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Escape',
+            keyCode: 27,
+            bubbles: true
+          }))
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        
         pageApplicants.push(applicant)
       } catch (error) {
         console.error(`扫描第 ${index + 1} 个申请人失败:`, error)
+        // 尝试返回列表
+        try {
+          window.history.back()
+          await new Promise(resolve => setTimeout(resolve, 2000))
+        } catch (e) {}
       }
-    })
+    }
     
     return pageApplicants
   }
@@ -662,11 +1090,31 @@ function scanApplicantsDirectly() {
   // 扫描所有页面
   async function scanAllPages() {
     while (true) {
+      // 检查是否应该停止
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        const result = await chrome.storage.local.get(['scanProcessing'])
+        if (result.scanProcessing && !result.scanProcessing.active) {
+          console.log("扫描已被用户停止")
+          break
+        }
+      }
+      
       console.log(`📄 扫描第 ${pageNumber} 页`)
       
-      const pageApplicants = scanCurrentPage()
+      const pageApplicants = await scanCurrentPage()
       allApplicants = allApplicants.concat(pageApplicants)
       console.log(`第 ${pageNumber} 页找到 ${pageApplicants.length} 个申请人`)
+      
+      // 实时保存数据
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        const existingData = await chrome.storage.local.get(['applicants'])
+        const existingApplicants = existingData.applicants || []
+        const existingIds = new Set(existingApplicants.map(a => a.id))
+        const newApplicants = pageApplicants.filter(a => !existingIds.has(a.id))
+        const allStoredApplicants = [...existingApplicants, ...newApplicants]
+        await chrome.storage.local.set({ applicants: allStoredApplicants })
+        console.log(`💾 保存了 ${newApplicants.length} 条新数据（总计 ${allStoredApplicants.length} 条）`)
+      }
       
       const nextButton = findNextPageButton()
       if (nextButton) {
@@ -754,6 +1202,31 @@ function batchProcessDirectly(replyMessage: string) {
     const locationMatch = detailText.match(/现居：([^实]+)/)
     const internMatch = detailText.match(/(实习\d+次)/)
     
+    // 从卡片顶部获取投递职位
+    let listPosition = ''
+    const cardHeader = card.querySelector('.resume-item__header, .card-header, [class*="header"]')
+    if (cardHeader) {
+      const headerText = cardHeader.textContent || ''
+      const positionMatch = headerText.match(/^([^\d]+?)(?:\s*\d{4}|\s*转发|$)/)
+      if (positionMatch) {
+        listPosition = positionMatch[1].trim()
+        console.log(`从卡片顶部获取职位: ${listPosition}`)
+      }
+    }
+    
+    if (!listPosition) {
+      const topElements = card.querySelectorAll('.resume-item > div:first-child, .resume-item > *:first-child')
+      for (const elem of topElements) {
+        const text = elem.textContent?.trim() || ''
+        if (text && text.length > 2 && text.length < 50 && 
+            !text.includes('转发') && !text.match(/\d{4}-\d{2}-\d{2}/)) {
+          listPosition = text.split(/\s{2,}/)[0]
+          console.log(`从卡片顶部元素获取职位: ${listPosition}`)
+          break
+        }
+      }
+    }
+    
     const applicant = {
       id: `${Date.now()}_${index}`,
       name: name,
@@ -762,26 +1235,342 @@ function batchProcessDirectly(replyMessage: string) {
       internExperience: internMatch ? internMatch[1] : '',
       phone: '',
       email: '',
-      position: '未知职位',
+      position: listPosition || '未知职位',
+      jobIntention: '',  // 求职意向
+      onlineResume: '',  // 在线简历
       applyTime: new Date().toISOString(),
       status: '已沟通'
     }
     
-    // 保存申请人信息
-    if (typeof chrome !== 'undefined' && chrome.storage) {
-      const existingData = await chrome.storage.local.get(['applicants'])
-      const existingApplicants = existingData.applicants || []
-      const existingIds = new Set(existingApplicants.map(a => a.id))
+    // 保存申请人信息（在获取完联系方式后再保存）
+    // 这部分代码移到获取联系方式之后
+    
+    // 先点击卡片进入详情页获取联系方式
+    console.log("点击卡片进入详情页...")
+    const cardClickable = card.querySelector('.resume-info__center') || card
+    ;(cardClickable as HTMLElement).click()
+    
+    // 等待详情页加载
+    console.log(`等待详情页加载...`)
+    await new Promise(resolve => setTimeout(resolve, 3000))
+    
+    // 检查页面是否加载完成（查找关键元素）
+    let retryCount = 0
+    while (retryCount < 3) {
+      const phoneEmailElements = document.querySelectorAll('.phone-email-item')
+      if (phoneEmailElements.length > 0) {
+        console.log(`找到联系信息元素，页面加载完成`)
+        break
+      }
       
-      if (!existingIds.has(applicant.id)) {
-        const allApplicants = [...existingApplicants, applicant]
-        await chrome.storage.local.set({ applicants: allApplicants })
-        console.log(`💾 已保存申请人信息: ${name}`)
+      retryCount++
+      console.log(`联系信息尚未加载，等待中... (重试 ${retryCount}/3)`)
+      await new Promise(resolve => setTimeout(resolve, 2000))
+    }
+    
+    // 在详情页中查找联系方式
+    console.log("查找联系方式...")
+    
+    // 查找联系方式（优先查找 phone-email 组合元素）
+    let phoneNumber = ''
+    let email = ''
+    
+    // 首先查找包含手机和邮箱的组合元素
+    // 优先查找单独的 phone-email-item 元素
+    const phoneItems = document.querySelectorAll('.phone-email-item')
+    if (phoneItems.length >= 2) {
+      // 如果有单独的元素，使用它们
+      phoneItems.forEach(item => {
+        const text = item.textContent || ''
+        
+        // 检查是否包含手机号
+        const phoneMatch = text.match(/(?:\+86\s*)?1[3-9]\d{9}/)
+        if (phoneMatch && !phoneNumber) {
+          phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
+          console.log("从 phone-email-item 提取手机号:", phoneNumber)
+        }
+        
+        // 检查是否包含邮箱
+        const emailMatch = text.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
+        if (emailMatch && !email) {
+          email = emailMatch[0]
+          console.log("从 phone-email-item 提取邮箱:", email)
+        }
+      })
+    }
+    
+    // 如果没有找到单独的元素，尝试从组合元素中提取
+    if (!phoneNumber || !email) {
+      const phoneEmailElement = document.querySelector('.phone-email, [class*="phone-email"]')
+      if (phoneEmailElement && !phoneEmailElement.classList.contains('phone-email-item')) {
+        const text = phoneEmailElement.textContent || ''
+        console.log("找到 phone-email 组合元素:", text)
+        
+        // 提取手机号（可能带有 +86 前缀）
+        if (!phoneNumber) {
+          const phoneMatch = text.match(/(?:\+86\s*)?1[3-9]\d{9}/)
+          if (phoneMatch) {
+            phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
+            console.log("提取手机号:", phoneNumber)
+          }
+        }
+        
+        // 提取邮箱（使用更严格的正则，避免把手机号当作邮箱的一部分）
+        if (!email) {
+          // 先尝试在手机号之后查找邮箱
+          const afterPhone = text.substring(text.indexOf(phoneNumber) + phoneNumber.length)
+          const emailMatch = afterPhone.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/) ||
+                            text.match(/(?<!\d)[\w.-]+@[\w.-]+\.[\w]{2,}/)
+          if (emailMatch) {
+            email = emailMatch[0]
+            console.log("提取邮箱:", email)
+          }
+        }
       }
     }
     
-    // 查找沟通按钮
-    const buttons = card.querySelectorAll('button')
+    // 如果组合元素中没找到，尝试单独查找
+    if (!phoneNumber) {
+      const phoneSelectors = [
+        '[class*="phone"]:not(.phone-email)',
+        '[class*="mobile"]',
+        '[class*="tel"]',
+        'span:has-text("手机")',
+        'span:has-text("电话")',
+        '*[title*="手机"]',
+        '*[title*="电话"]'
+      ]
+      
+      for (const selector of phoneSelectors) {
+        try {
+          const phoneElement = document.querySelector(selector)
+          if (phoneElement) {
+            const text = phoneElement.textContent || ''
+            const phoneMatch = text.match(/(?:\+86\s*)?1[3-9]\d{9}/)
+            if (phoneMatch) {
+              phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
+              console.log("找到手机号:", phoneNumber)
+              break
+            }
+          }
+        } catch (e) {}
+      }
+    }
+    
+    if (!email) {
+      const emailSelectors = [
+        '[class*="email"]:not(.phone-email)',
+        '[class*="mail"]',
+        'span:has-text("邮箱")',
+        'span:has-text("Email")',
+        '*[title*="邮箱"]',
+        '*[title*="email"]'
+      ]
+      
+      for (const selector of emailSelectors) {
+        try {
+          const emailElement = document.querySelector(selector)
+          if (emailElement) {
+            const text = emailElement.textContent || ''
+            const emailMatch = text.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
+            if (emailMatch) {
+              email = emailMatch[0]
+              console.log("找到邮箱:", email)
+              break
+            }
+          }
+        } catch (e) {}
+      }
+    }
+    
+    // 最后的备选方案：在页面文本中查找
+    if (!phoneNumber || !email) {
+      const bodyText = document.body.textContent || ''
+      
+      if (!phoneNumber) {
+        const phoneMatch = bodyText.match(/(?:\+86\s*)?1[3-9]\d{9}/)
+        if (phoneMatch) {
+          phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
+          console.log("从页面文本中找到手机号:", phoneNumber)
+        }
+      }
+      
+      if (!email) {
+        const emailMatch = bodyText.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
+        if (emailMatch) {
+          email = emailMatch[0]
+          console.log("从页面文本中找到邮箱:", email)
+        }
+      }
+    }
+    
+    // 查找求职意向
+    console.log("查找求职意向...")
+    let jobIntention = ''
+    
+    // 基于HTML结构查找求职意向
+    const expJobsElement = document.querySelector('.exp-jobs')
+    if (expJobsElement) {
+      const text = expJobsElement.textContent?.trim() || ''
+      const match = text.match(/求职意向[：:]\s*(.+)/)
+      if (match) {
+        jobIntention = match[1].trim()
+        console.log(`找到求职意向: ${jobIntention}`)
+      }
+    }
+    
+    // 备选方法：在 main-detail-sub 中查找
+    if (!jobIntention) {
+      const mainDetailSub = document.querySelector('.main-detail-sub')
+      if (mainDetailSub) {
+        const spans = mainDetailSub.querySelectorAll('span')
+        spans.forEach(span => {
+          const text = span.textContent?.trim() || ''
+          if (text.includes('求职意向')) {
+            const match = text.match(/求职意向[：:]\s*(.+)/)
+            if (match) {
+              jobIntention = match[1].trim()
+              console.log(`从 main-detail-sub 找到求职意向: ${jobIntention}`)
+            }
+          }
+        })
+      }
+    }
+    
+    // 查找投递职位（从详情页）
+    console.log("查找投递职位（详情页）...")
+    let detailPosition = ''
+    const positionTitleElement = document.querySelector('.resume-tools__title')
+    if (positionTitleElement) {
+      const text = positionTitleElement.textContent?.trim() || ''
+      const match = text.match(/投递职位[：:]\s*(.+?)(?:·|$)/)
+      if (match) {
+        detailPosition = match[1].trim()
+        console.log(`找到投递职位: ${detailPosition}`)
+      } else if (text) {
+        // 如果没有"投递职位："前缀，尝试直接使用文本
+        detailPosition = text.replace(/·.+$/, '').trim()
+        console.log(`找到投递职位（无前缀）: ${detailPosition}`)
+      }
+    }
+    
+    // 如果详情页找到了职位，优先使用详情页的
+    if (detailPosition) {
+      applicant.position = detailPosition
+    }
+    
+    // 处理在线简历
+    console.log("处理在线简历...")
+    let onlineResume = ''
+    const resumeOnlineDiv = document.querySelector('.resume-online')
+    if (resumeOnlineDiv) {
+      // 获取所有section的内容
+      const allSections = resumeOnlineDiv.querySelectorAll('.resume-online-item')
+      const resumeContent = []
+      
+      allSections.forEach(section => {
+        const title = section.querySelector('.resume-online-item__title')?.textContent?.trim() || ''
+        let content = section.querySelector('.resume-online-item__content')?.textContent?.trim() || ''
+        if (title && content) {
+          // 替换换行符为\n字符串，避免破坏CSV结构
+          content = content.replace(/\r\n/g, '\\n').replace(/\n/g, '\\n').replace(/\r/g, '\\n')
+          resumeContent.push(`【${title}】${content}`)
+        }
+      })
+      
+      if (resumeContent.length > 0) {
+        onlineResume = resumeContent.join(' | ')
+        console.log(`找到在线简历完整内容: ${onlineResume.substring(0, 200)}...`)
+      } else {
+        // 如果没有找到内容，尝试获取所有sections的标题
+        const resumeSections = resumeOnlineDiv.querySelectorAll('.resume-online-item__title')
+        const sectionTitles = Array.from(resumeSections).map(el => el.textContent?.trim()).filter(Boolean)
+        if (sectionTitles.length > 0) {
+          onlineResume = `在线简历 - 包含: ${sectionTitles.join(', ')}`
+          console.log(`找到在线简历结构: ${onlineResume}`)
+        } else {
+          onlineResume = '在线简历（已查看）'
+        }
+      }
+    }
+    
+    // 更新申请人信息
+    applicant.phone = phoneNumber
+    applicant.email = email
+    applicant.jobIntention = jobIntention
+    applicant.onlineResume = onlineResume
+    
+    console.log(`获取到信息 - 投递职位: ${applicant.position}, 求职意向: ${jobIntention || '未找到'}, 在线简历: ${onlineResume || '未找到'}, 手机: ${phoneNumber || '未找到'}, 邮箱: ${email || '未找到'}`)
+    
+    // 如果没有找到邮箱，再等待一下并重试
+    if (!email && retryCount < 3) {
+      console.log(`邮箱未找到，再等待2秒后重试提取...`)
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      // 重新尝试找邮箱
+      const phoneItems2 = document.querySelectorAll('.phone-email-item')
+      phoneItems2.forEach(item => {
+        const text = item.textContent || ''
+        const emailMatch = text.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
+        if (emailMatch && !email) {
+          email = emailMatch[0]
+          console.log(`重试后找到邮箱: ${email}`)
+          applicant.email = email
+        }
+      })
+    }
+    
+    // 关闭详情弹窗返回列表页面
+    console.log("关闭详情弹窗...")
+    
+    const closeSelectors = [
+      '.el-dialog__headerbtn',  // Element UI dialog close button
+      '.el-dialog__close',      // Element UI close icon
+      '.el-icon-close',         // Element UI close icon
+      'button[aria-label="Close"]',
+      'button[aria-label="关闭"]',
+      '.dialog-close',
+      '.modal-close',
+      '[class*="close"]:not(.phone-email)',
+      'i.el-dialog__close'
+    ]
+    
+    let closeButton = null
+    for (const selector of closeSelectors) {
+      closeButton = document.querySelector(selector)
+      if (closeButton) {
+        console.log(`找到关闭按钮: ${selector}`)
+        break
+      }
+    }
+    
+    if (closeButton) {
+      console.log("点击关闭按钮返回列表")
+      ;(closeButton as HTMLElement).click()
+    } else {
+      console.log("未找到关闭按钮，尝试ESC键")
+      // 尝试按ESC键关闭弹窗
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape',
+        keyCode: 27,
+        bubbles: true
+      }))
+    }
+    
+    // 等待弹窗关闭和页面更新
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    
+    // 重新获取卡片元素（因为页面可能已经更新）
+    const updatedCards = document.querySelectorAll('.resume-item')
+    const updatedCard = updatedCards[index]
+    
+    if (!updatedCard) {
+      console.log("无法找到更新后的卡片元素")
+      return false
+    }
+    
+    // 查找沟通按钮（在列表页面中）
+    const buttons = updatedCard.querySelectorAll('button')
     let communicateButton: HTMLButtonElement | null = null
     
     for (const button of buttons) {
@@ -899,6 +1688,19 @@ function batchProcessDirectly(replyMessage: string) {
         
         // 等待消息发送完成（增加延迟避免网络超时）
         await new Promise(resolve => setTimeout(resolve, 3000))
+        
+        // 保存申请人信息（包含联系方式）
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+          const existingData = await chrome.storage.local.get(['applicants'])
+          const existingApplicants = existingData.applicants || []
+          const existingIds = new Set(existingApplicants.map(a => a.id))
+          
+          if (!existingIds.has(applicant.id)) {
+            const allApplicants = [...existingApplicants, applicant]
+            await chrome.storage.local.set({ applicants: allApplicants })
+            console.log(`💾 已保存申请人信息: ${name}，手机: ${applicant.phone || '未找到'}，邮箱: ${applicant.email || '未找到'}`)
+          }
+        }
         
         // 返回列表页面（点击返回或关闭按钮）
         console.log("准备返回列表页面...")
