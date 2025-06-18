@@ -13,6 +13,24 @@ function IndexPopup() {
     setTimeout(() => {
       getPageStats()
     }, 500)
+    
+    // 监听来自批量处理的页面更新请求
+    const messageListener = (request: any) => {
+      if (request.action === 'updatePageStats') {
+        getPageStats()
+        loadData()
+      }
+    }
+    
+    if (chrome.runtime?.onMessage) {
+      chrome.runtime.onMessage.addListener(messageListener)
+    }
+    
+    return () => {
+      if (chrome.runtime?.onMessage) {
+        chrome.runtime.onMessage.removeListener(messageListener)
+      }
+    }
   }, [])
 
   const loadData = async () => {
@@ -87,9 +105,19 @@ function IndexPopup() {
                 
                 console.log(`找到元素: ${cards.length} 个卡片, ${nameElements.length} 个姓名, ${buttons.length} 个按钮`)
                 
+                // 检查页码信息
+                let currentPageNum = 1
+                const pageNumElement = document.querySelector('.el-pagination .el-pager .active') ||
+                                     document.querySelector('.el-pagination .number.active') ||
+                                     document.querySelector('[class*="pagination"] .active')
+                if (pageNumElement) {
+                  currentPageNum = parseInt(pageNumElement.textContent || '1')
+                }
+                
                 return {
                   totalApplicants: cards.length,
                   currentPage: window.location.href,
+                  pageNumber: currentPageNum,
                   timestamp: new Date().toISOString(),
                   debug: {
                     url: window.location.href,
@@ -106,7 +134,8 @@ function IndexPopup() {
             if (results && results[0] && results[0].result) {
               const stats = results[0].result
               setPageStats(stats)
-              setStatus(`手动检测成功 - ${stats.totalApplicants} 个申请人`)
+              const pageInfo = stats.pageNumber > 1 ? `第 ${stats.pageNumber} 页 - ` : ''
+              setStatus(`${pageInfo}${stats.totalApplicants} 个申请人`)
             }
           } catch (scriptError) {
             console.error('执行脚本失败:', scriptError)
@@ -175,10 +204,15 @@ function IndexPopup() {
             if (!result.batchProcessing.active) {
               clearInterval(progressInterval)
               setProcessing(false)
-              setStatus(`批量处理完成，共处理 ${result.batchProcessing.processedCount} 个申请人`)
+              
+              const pageInfo = result.batchProcessing.totalPages ? 
+                `${result.batchProcessing.totalPages} 页，` : ''
+              
+              setStatus(`批量处理完成，共处理 ${pageInfo}${result.batchProcessing.processedCount} 个申请人`)
               loadData()
             } else {
-              setStatus(`正在处理... (${result.batchProcessing.processedCount}/${result.batchProcessing.totalCount})`)
+              const currentPage = result.batchProcessing.currentPage ? '(处理中...)' : ''
+              setStatus(`正在处理... 已完成 ${result.batchProcessing.processedCount} 个 ${currentPage}`)
             }
           }
         }, 2000)
@@ -210,11 +244,18 @@ function IndexPopup() {
           
           if (results && results[0] && results[0].result) {
             const applicants = results[0].result
-            // 保存到存储
+            // 保存到存储（累积保存）
             const existingData = await chrome.storage.local.get(['applicants'])
-            const allApplicants = [...(existingData.applicants || []), ...applicants]
+            const existingApplicants = existingData.applicants || []
+            
+            // 去重处理（基于ID）
+            const existingIds = new Set(existingApplicants.map(a => a.id))
+            const newApplicants = applicants.filter(a => !existingIds.has(a.id))
+            
+            const allApplicants = [...existingApplicants, ...newApplicants]
             await chrome.storage.local.set({ applicants: allApplicants })
-            setStatus(`扫描完成，收集到 ${applicants.length} 条数据`)
+            
+            setStatus(`扫描完成，新增 ${newApplicants.length} 条数据（总计 ${allApplicants.length} 条）`)
           }
         }
         
@@ -383,9 +424,10 @@ function IndexPopup() {
         </div>
         <div style={{ fontSize: 12, marginBottom: 4 }}>
           当前页面: <strong>{pageStats.totalApplicants} 个申请人</strong>
+          {pageStats.pageNumber && pageStats.pageNumber > 1 ? ` (第 ${pageStats.pageNumber} 页)` : ''}
         </div>
         <div style={{ fontSize: 12 }}>
-          已收集数据: <strong>{applicantCount} 条</strong>
+          累计收集数据: <strong>{applicantCount} 条</strong>
         </div>
       </div>
 
@@ -545,50 +587,103 @@ function IndexPopup() {
   )
 }
 
-// 直接在页面上执行的扫描函数
+// 直接在页面上执行的扫描函数（支持分页）
 function scanApplicantsDirectly() {
-  console.log("🔍 开始直接扫描申请人信息")
+  console.log("🔍 开始扫描所有页面的申请人信息")
   
-  const cards = document.querySelectorAll('.resume-item')
-  const applicants = []
+  let allApplicants = []
+  let pageNumber = 1
   
-  cards.forEach((card, index) => {
-    try {
-      // 提取姓名
-      const nameElement = card.querySelector('.resume-info__center-name')
-      const name = nameElement?.textContent?.trim() || `申请人${index + 1}`
-      
-      // 提取详细信息
-      const detailElement = card.querySelector('.resume-info__center-detail')
-      const detailText = detailElement?.textContent || ''
-      
-      // 解析年龄、地点等信息
-      const ageMatch = detailText.match(/(\d{1,2})岁/)
-      const locationMatch = detailText.match(/现居：([^实]+)/)
-      const internMatch = detailText.match(/(实习\d+次)/)
-      
-      const applicant = {
-        id: `${Date.now()}_${index}`,
-        name: name,
-        age: ageMatch ? ageMatch[1] : '',
-        location: locationMatch ? locationMatch[1].trim() : '',
-        internExperience: internMatch ? internMatch[1] : '',
-        phone: '', // 需要点击查看详情才能获取
-        email: '', // 需要点击查看详情才能获取
-        position: '未知职位',
-        applyTime: new Date().toISOString(),
-        status: '新申请'
-      }
-      
-      applicants.push(applicant)
-      console.log(`扫描到申请人: ${name}`)
-    } catch (error) {
-      console.error(`扫描第 ${index + 1} 个申请人失败:`, error)
+  // 查找分页元素
+  function findNextPageButton() {
+    const nextPageSelectors = [
+      '.el-pagination button.btn-next',
+      '.el-pagination .el-icon-arrow-right',
+      '.pagination-next',
+      '[aria-label="下一页"]',
+      'button:has(.el-icon-arrow-right)',
+      '.el-pager + button'
+    ]
+    
+    for (const selector of nextPageSelectors) {
+      try {
+        const button = document.querySelector(selector)
+        if (button && !(button as HTMLButtonElement).disabled) {
+          return button
+        }
+      } catch (e) {}
     }
-  })
+    return null
+  }
   
-  console.log(`✅ 扫描完成，共找到 ${applicants.length} 个申请人`)
-  return applicants
+  // 扫描单页
+  function scanCurrentPage() {
+    const cards = document.querySelectorAll('.resume-item')
+    const pageApplicants = []
+    
+    cards.forEach((card, index) => {
+      try {
+        // 提取姓名
+        const nameElement = card.querySelector('.resume-info__center-name')
+        const name = nameElement?.textContent?.trim() || `申请人${index + 1}`
+        
+        // 提取详细信息
+        const detailElement = card.querySelector('.resume-info__center-detail')
+        const detailText = detailElement?.textContent || ''
+        
+        // 解析年龄、地点等信息
+        const ageMatch = detailText.match(/(\d{1,2})岁/)
+        const locationMatch = detailText.match(/现居：([^实]+)/)
+        const internMatch = detailText.match(/(实习\d+次)/)
+        
+        const applicant = {
+          id: `${Date.now()}_${pageNumber}_${index}`,
+          name: name,
+          age: ageMatch ? ageMatch[1] : '',
+          location: locationMatch ? locationMatch[1].trim() : '',
+          internExperience: internMatch ? internMatch[1] : '',
+          phone: '',
+          email: '',
+          position: '未知职位',
+          applyTime: new Date().toISOString(),
+          status: '新申请',
+          pageNumber: pageNumber
+        }
+        
+        pageApplicants.push(applicant)
+      } catch (error) {
+        console.error(`扫描第 ${index + 1} 个申请人失败:`, error)
+      }
+    })
+    
+    return pageApplicants
+  }
+  
+  // 扫描所有页面
+  async function scanAllPages() {
+    while (true) {
+      console.log(`📄 扫描第 ${pageNumber} 页`)
+      
+      const pageApplicants = scanCurrentPage()
+      allApplicants = allApplicants.concat(pageApplicants)
+      console.log(`第 ${pageNumber} 页找到 ${pageApplicants.length} 个申请人`)
+      
+      const nextButton = findNextPageButton()
+      if (nextButton) {
+        pageNumber++
+        ;(nextButton as HTMLElement).click()
+        await new Promise(resolve => setTimeout(resolve, 2000))
+      } else {
+        break
+      }
+    }
+    
+    console.log(`✅ 扫描完成，共 ${pageNumber} 页，找到 ${allApplicants.length} 个申请人`)
+    return allApplicants
+  }
+  
+  // 如果需要异步，返回Promise
+  return scanAllPages()
 }
 
 // 直接在页面上执行的批量处理函数
@@ -596,15 +691,94 @@ function batchProcessDirectly(replyMessage: string) {
   console.log("🚀 开始直接批量处理")
   console.log("回复消息模板:", replyMessage)
   
-  const cards = document.querySelectorAll('.resume-item')
-  console.log(`找到 ${cards.length} 个申请人卡片`)
-  
-  let processedCount = 0
+  let totalProcessedCount = 0
+  let currentPageProcessedCount = 0
   let currentIndex = 0
+  let isProcessing = true
+  let failedCount = 0
+  
+  // 查找分页相关元素
+  function findPaginationElements() {
+    // 查找下一页按钮（可能的选择器）
+    const nextPageSelectors = [
+      '.el-pagination button.btn-next',
+      '.el-pagination .el-icon-arrow-right',
+      '.pagination-next',
+      '[aria-label="下一页"]',
+      'button:has(.el-icon-arrow-right)',
+      '.el-pager + button'
+    ]
+    
+    let nextButton = null
+    for (const selector of nextPageSelectors) {
+      try {
+        nextButton = document.querySelector(selector)
+        if (nextButton && !(nextButton as HTMLButtonElement).disabled) {
+          console.log(`找到下一页按钮: ${selector}`)
+          break
+        }
+      } catch (e) {
+        // 某些选择器可能不支持
+      }
+    }
+    
+    // 查找页码信息
+    const pageInfo = document.querySelector('.el-pagination__total') || 
+                    document.querySelector('.pagination-info') ||
+                    document.querySelector('[class*="pagination"]')
+    
+    return { nextButton, pageInfo }
+  }
+  
+  // 处理当前页面的所有申请人
+  async function processCurrentPage() {
+    const cards = document.querySelectorAll('.resume-item')
+    console.log(`当前页面找到 ${cards.length} 个申请人`)
+    
+    currentPageProcessedCount = 0
+    currentIndex = 0
   
   // 处理单个申请人的函数
-  async function processApplicant(card: Element, index: number) {
-    console.log(`处理第 ${index + 1}/${cards.length} 个申请人`)
+  async function processApplicant(card: Element, index: number, totalCards: number) {
+    console.log(`\n处理第 ${index + 1}/${totalCards} 个申请人`)
+    
+    try {
+    // 先提取申请人信息并保存
+    const nameElement = card.querySelector('.resume-info__center-name')
+    const name = nameElement?.textContent?.trim() || `申请人${index + 1}`
+    
+    const detailElement = card.querySelector('.resume-info__center-detail')
+    const detailText = detailElement?.textContent || ''
+    
+    const ageMatch = detailText.match(/(\d{1,2})岁/)
+    const locationMatch = detailText.match(/现居：([^实]+)/)
+    const internMatch = detailText.match(/(实习\d+次)/)
+    
+    const applicant = {
+      id: `${Date.now()}_${index}`,
+      name: name,
+      age: ageMatch ? ageMatch[1] : '',
+      location: locationMatch ? locationMatch[1].trim() : '',
+      internExperience: internMatch ? internMatch[1] : '',
+      phone: '',
+      email: '',
+      position: '未知职位',
+      applyTime: new Date().toISOString(),
+      status: '已沟通'
+    }
+    
+    // 保存申请人信息
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      const existingData = await chrome.storage.local.get(['applicants'])
+      const existingApplicants = existingData.applicants || []
+      const existingIds = new Set(existingApplicants.map(a => a.id))
+      
+      if (!existingIds.has(applicant.id)) {
+        const allApplicants = [...existingApplicants, applicant]
+        await chrome.storage.local.set({ applicants: allApplicants })
+        console.log(`💾 已保存申请人信息: ${name}`)
+      }
+    }
     
     // 查找沟通按钮
     const buttons = card.querySelectorAll('button')
@@ -722,12 +896,13 @@ function batchProcessDirectly(replyMessage: string) {
         chatInput.dispatchEvent(keyupEvent)
         
         console.log("回车键事件序列完成，消息应该已发送")
-        processedCount++
         
-        // 等待消息发送完成
-        await new Promise(resolve => setTimeout(resolve, 1500))
+        // 等待消息发送完成（增加延迟避免网络超时）
+        await new Promise(resolve => setTimeout(resolve, 3000))
         
         // 返回列表页面（点击返回或关闭按钮）
+        console.log("准备返回列表页面...")
+        
         // 基于HTML结构，关闭按钮在 .chat-close 中
         let backButton = document.querySelector('.chat-close')
         
@@ -752,76 +927,152 @@ function batchProcessDirectly(replyMessage: string) {
         }
         
         // 等待页面返回到列表
-        await new Promise(resolve => setTimeout(resolve, 2000))
+        await new Promise(resolve => setTimeout(resolve, 3000))
+        
+        // 标记成功
+        return true
       } else {
         console.log("未找到聊天输入框")
         
         // 尝试返回列表
         window.history.back()
-        await new Promise(resolve => setTimeout(resolve, 2000))
+        await new Promise(resolve => setTimeout(resolve, 3000))
+        
+        return false
       }
     } else {
       console.log("未找到沟通按钮")
+      return false
+    }
+    } catch (error) {
+      console.error(`处理申请人 ${index + 1} 时出错:`, error)
+      
+      // 尝试返回列表页面
+      try {
+        window.history.back()
+        await new Promise(resolve => setTimeout(resolve, 3000))
+      } catch (e) {
+        console.error("返回列表失败:", e)
+      }
+      
+      return false
     }
   }
   
-  // 顺序处理每个申请人
-  async function processNext() {
-    // 检查是否应该停止
-    if (typeof chrome !== 'undefined' && chrome.storage) {
-      const result = await new Promise((resolve) => {
-        chrome.storage.local.get(['batchProcessing'], (data) => resolve(data))
-      })
-      
-      if (result.batchProcessing && !result.batchProcessing.active) {
-        console.log("批量处理已被用户停止")
-        return
-      }
-    }
-    
-    if (currentIndex < cards.length) {
-      // 重新获取卡片列表，因为页面可能已经刷新
-      const currentCards = document.querySelectorAll('.resume-item')
-      if (currentCards[currentIndex]) {
-        await processApplicant(currentCards[currentIndex], currentIndex)
+    // 顺序处理每个申请人
+    for (let i = 0; i < cards.length; i++) {
+      // 检查是否应该停止
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        const result = await new Promise((resolve) => {
+          chrome.storage.local.get(['batchProcessing'], (data) => resolve(data))
+        })
         
-        // 更新进度到存储
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-          chrome.storage.local.get(['batchProcessing'], (result) => {
-            if (result.batchProcessing) {
-              chrome.storage.local.set({
-                batchProcessing: {
-                  ...result.batchProcessing,
-                  processedCount: processedCount
-                }
-              })
-            }
-          })
+        if (result.batchProcessing && !result.batchProcessing.active) {
+          console.log("批量处理已被用户停止")
+          isProcessing = false
+          return false
         }
       }
-      currentIndex++
       
-      // 继续处理下一个
-      setTimeout(processNext, 1000) // 给页面一些时间稳定
-    } else {
-      console.log(`✅ 批量处理完成，共成功发送消息给 ${processedCount} 个申请人`)
+      // 处理申请人，传入正确的参数
+      const success = await processApplicant(cards[i], i, cards.length)
       
-      // 标记批量处理完成
+      if (success) {
+        currentPageProcessedCount++
+        totalProcessedCount++
+      } else {
+        failedCount++
+        console.log(`⚠️ 申请人 ${i + 1} 处理失败`)
+      }
+      
+      // 更新进度
       if (typeof chrome !== 'undefined' && chrome.storage) {
         chrome.storage.local.set({
           batchProcessing: {
-            active: false,
-            endTime: new Date().toISOString(),
-            totalCount: cards.length,
-            processedCount: processedCount
+            active: true,
+            processedCount: totalProcessedCount,
+            failedCount: failedCount,
+            currentPage: true
           }
         })
       }
+      
+      // 添加延迟，避免操作过快
+      if (i < cards.length - 1) {
+        console.log("等待 3 秒后处理下一个...")
+        await new Promise(resolve => setTimeout(resolve, 3000))
+      }
+    }
+    
+    return true
+  }
+  
+  // 主处理流程
+  async function processAllPages() {
+    let pageNumber = 1
+    
+    while (isProcessing) {
+      console.log(`\n📄 处理第 ${pageNumber} 页`)
+      
+      // 处理当前页面
+      const success = await processCurrentPage()
+      
+      if (!success) {
+        console.log("处理被中断")
+        break
+      }
+      
+      // 检查是否有下一页
+      const { nextButton } = findPaginationElements()
+      
+      if (nextButton && !(nextButton as HTMLButtonElement).disabled) {
+        console.log("找到下一页，准备切换...")
+        
+        // 点击下一页
+        ;(nextButton as HTMLButtonElement).click()
+        
+        // 等待页面加载
+        console.log("等待下一页加载...")
+        await new Promise(resolve => setTimeout(resolve, 3000))
+        
+        // 更新页面统计（如果在Chrome扩展环境中）
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+          try {
+            // 通知popup更新页面统计
+            chrome.runtime.sendMessage({ action: 'updatePageStats' })
+          } catch (e) {
+            console.log("无法发送更新消息:", e)
+          }
+        }
+        
+        pageNumber++
+      } else {
+        console.log("没有更多页面了")
+        break
+      }
+    }
+    
+    console.log(`\n✅ 所有页面处理完成！`)
+    console.log(`总共处理了 ${pageNumber} 页`)
+    console.log(`成功处理: ${totalProcessedCount} 个申请人`)
+    console.log(`失败: ${failedCount} 个`)
+    
+    // 标记批量处理完成
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.set({
+        batchProcessing: {
+          active: false,
+          endTime: new Date().toISOString(),
+          totalPages: pageNumber,
+          processedCount: totalProcessedCount,
+          failedCount: failedCount
+        }
+      })
     }
   }
   
-  // 开始处理
-  processNext()
+  // 开始处理所有页面
+  processAllPages()
 }
 
 export default IndexPopup
