@@ -89,141 +89,29 @@ class HRAutomation {
     
     this.isRunning = true
     
-    // 实时扫描新加载的申请人和详情页面
-    this.observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'childList' && !this.batchProcessing) {
-          mutation.addedNodes.forEach((node) => {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              const element = node as Element
-              
-              // 检查是否是申请人卡片
-              this.checkForApplicantInfo(element)
-              
-              // 检查是否是详情弹窗打开
-              if (element.classList?.contains('el-dialog__wrapper') || 
-                  element.querySelector('.el-dialog__wrapper') ||
-                  element.querySelector('.resume-online')) {
-                console.log('📋 检测到详情弹窗打开')
-                this.handleDetailPageOpen()
-              }
-            }
-          })
-        }
-      })
-    })
-
-    this.observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    })
-
-    // 初始扫描
-    await this.scanCurrentPageApplicants()
   }
 
-  // 处理详情页面打开
-  private async handleDetailPageOpen() {
-    // 等待页面加载完成
-    await this.delay(1000)
-    
-    // 提取详细信息
-    const detailInfo = await this.extractDetailedResumeInfo()
-    
-    if (detailInfo && detailInfo.name) {
-      // 查找对应的申请人信息并更新
-      const applicants = await this.storage.getApplicants()
-      const existingApplicant = applicants.find(a => a.name === detailInfo.name)
-      
-      if (existingApplicant) {
-        // 合并详细信息
-        const updatedApplicant = {
-          ...existingApplicant,
-          ...detailInfo,
-          needDetailExtraction: false
-        }
-        
-        await this.storage.saveApplicant(updatedApplicant)
-        console.log(`✅ 已更新申请人详细信息: ${detailInfo.name}`)
-      } else {
-        // 如果是新申请人，创建新记录
-        const newApplicant: ApplicantInfo = {
-          id: this.generateApplicantId(detailInfo.name || '', detailInfo.phone || '', detailInfo.email || ''),
-          name: detailInfo.name || '',
-          phone: detailInfo.phone || '',
-          email: detailInfo.email || '',
-          position: detailInfo.position || '未知职位',
-          jobIntention: detailInfo.jobIntention,
-          applyTime: new Date().toISOString(),
-          status: '新申请',
-          resumeDetails: detailInfo.resumeDetails,
-          needDetailExtraction: false
-        }
-        
-        await this.storage.saveApplicant(newApplicant)
-        console.log(`✅ 已保存新申请人详细信息: ${detailInfo.name}`)
-      }
-    }
-  }
 
   // 批量处理主函数
   private async startBatchProcess(config: any) {
-    console.log('🚀 开始批量处理申请人')
+    console.log('🚀 开始批量沟通')
     this.batchProcessing = true
     this.currentBatchConfig = config
 
     try {
-      // 1. 先收集所有申请人信息
-      await this.scanCurrentPageApplicants()
-      
-      // 2. 如果启用详细信息提取，批量点击查看详情
-      if (config.extractDetails) {
-        await this.batchExtractDetailedInfo()
-      }
-      
-      // 3. 如果启用自动回复，批量点击沟通按钮
+      // 批量点击沟通按钮
       if (config.autoReply) {
         await this.batchContactApplicants(config.replyMessage)
       }
       
-      console.log('✅ 批量处理完成')
+      console.log('✅ 批量沟通完成')
     } catch (error) {
-      console.error('❌ 批量处理失败:', error)
+      console.error('❌ 批量沟通失败:', error)
     } finally {
       this.batchProcessing = false
     }
   }
 
-  // 批量提取详细信息
-  private async batchExtractDetailedInfo() {
-    console.log('📋 开始批量提取详细信息')
-    const applicantCards = this.findAllApplicantCards()
-    
-    for (let i = 0; i < applicantCards.length; i++) {
-      const card = applicantCards[i]
-      const nameElement = card.querySelector('.resume-info__center-name')
-      const name = nameElement?.textContent?.trim() || ''
-      
-      if (name && nameElement) {
-        console.log(`📄 正在提取详细信息: ${name} (${i + 1}/${applicantCards.length})`)
-        
-        // 点击名字打开详情
-        (nameElement as HTMLElement).click()
-        
-        // 等待详情页面加载
-        await this.delay(2000)
-        
-        // 提取详细信息（会自动通过 MutationObserver 触发）
-        // handleDetailPageOpen 会被自动调用
-        
-        // 关闭详情弹窗
-        await this.closeDetailDialog()
-        
-        // 随机延迟避免过快
-        await this.delay(1000 + Math.random() * 2000)
-      }
-    }
-  }
 
   // 关闭详情弹窗
   private async closeDetailDialog() {
@@ -245,22 +133,6 @@ class HRAutomation {
     }
   }
 
-  // 扫描当前页面所有申请人
-  private async scanCurrentPageApplicants() {
-    console.log('📊 扫描当前页面申请人信息')
-    const applicantCards = this.findAllApplicantCards()
-    
-    for (const card of applicantCards) {
-      const applicantInfo = this.extractApplicantInfo(card)
-      if (applicantInfo && !this.processedApplicants.has(applicantInfo.id)) {
-        this.processedApplicants.add(applicantInfo.id)
-        await this.storage.saveApplicant(applicantInfo)
-        console.log(`💾 已保存: ${applicantInfo.name}`)
-      }
-    }
-    
-    return applicantCards.length
-  }
 
   // 批量点击沟通按钮并发送消息
   private async batchContactApplicants(replyMessage: string) {
@@ -310,36 +182,7 @@ class HRAutomation {
     }
   }
 
-  private async checkForApplicantInfo(element: Element) {
-    const config = await this.storage.getConfig()
-    if (!config.dataCollection.enabled) return
 
-    const applicantElements = this.findApplicantElements(element)
-    
-    for (const applicantElement of applicantElements) {
-      const applicantInfo = this.extractApplicantInfo(applicantElement)
-      if (applicantInfo && !this.processedApplicants.has(applicantInfo.id)) {
-        this.processedApplicants.add(applicantInfo.id)
-        await this.storage.saveApplicant(applicantInfo)
-        console.log('已保存申请人信息:', applicantInfo.name)
-        
-        // 如果启用自动回复，尝试点击沟通按钮
-        if (config.autoReply.enabled) {
-          this.tryAutoContact(applicantElement, applicantInfo)
-        }
-      }
-    }
-  }
-
-  private async tryAutoContact(element: HTMLElement, applicant: ApplicantInfo) {
-    try {
-      // 查找沟通按钮
-      const contactButton = element.querySelector('button:contains("沟通")') ||
-                           element.querySelector('button[class*="沟通"]') ||
-                           element.querySelector('[class*="button"]:contains("沟通")') ||
-                           Array.from(element.querySelectorAll('button')).find(btn => 
-                             btn.textContent?.includes('沟通')
-                           )
 
       if (contactButton && !contactButton.classList.contains('disabled')) {
         console.log(`准备联系申请人: ${applicant.name}`)
