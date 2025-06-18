@@ -433,7 +433,7 @@ function IndexPopup() {
   }
 
   const generateSimpleCSV = (applicants: any[]) => {
-    const headers = ['姓名', '手机号', '邮箱', '年龄', '现居地', '投递职位', '求职意向', '在线简历', '实习经历', '可到岗时间', '工作天数', '教育背景', '项目经历', '申请时间']
+    const headers = ['姓名', '手机号', '邮箱', '年龄', '现居地', '投递职位', '求职意向', '在线简历', '申请时间']
     const rows = applicants.map(a => [
       a.name || '',
       a.phone || '',
@@ -443,11 +443,6 @@ function IndexPopup() {
       a.position || '',
       a.jobIntention || '',
       a.onlineResume || '',
-      a.internExperience || '',
-      a.availability || '',
-      a.workDays || '',
-      a.education || '',
-      a.projectExperience || '',
       new Date(a.applyTime).toLocaleString('zh-CN')
     ])
     
