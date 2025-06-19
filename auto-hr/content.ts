@@ -7,6 +7,9 @@ export const config: PlasmoCSConfig = {
 // 立即标记脚本已加载
 console.log("🚀 HR自动化内容脚本已加载!", window.location.href)
 
+// 设置全局标记
+;(window as any).__hrAutomationLoaded = true
+
 // 页面检测函数
 function detectApplicants() {
   const cards = document.querySelectorAll('.resume-item')
