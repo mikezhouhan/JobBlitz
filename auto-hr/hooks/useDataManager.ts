@@ -9,14 +9,14 @@ import { isChromeApiAvailable, storage, storageListener } from "../utils/chrome"
  */
 export const useDataManager = () => {
   const [applicantCount, setApplicantCount] = useState<number>(0)
-  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>(DEFAULT_MESSAGE_TEMPLATES)
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(DEFAULT_CONFIG.autoReply.selectedTemplateId)
+  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [status, setStatus] = useState<string>(STATUS_MESSAGES.LOADING)
 
   // 获取当前选中的消息模板
   const getCurrentTemplate = (): MessageTemplate => {
     const template = messageTemplates.find(t => t.id === selectedTemplateId)
-    return template || messageTemplates[0]
+    return template || messageTemplates[0] || DEFAULT_MESSAGE_TEMPLATES[0]
   }
 
   // 加载数据
@@ -33,7 +33,6 @@ export const useDataManager = () => {
       const savedTemplates: MessageTemplate[] = data[STORAGE_KEYS.MESSAGE_TEMPLATES] || []
       
       setApplicantCount(applicants.length)
-      setSelectedTemplateId(config.autoReply.selectedTemplateId)
       
       // 合并默认模板和自定义模板
       const allTemplates = [
@@ -41,6 +40,12 @@ export const useDataManager = () => {
         ...savedTemplates.filter(t => t.isCustom)
       ]
       setMessageTemplates(allTemplates)
+      
+      // 确保选中的模板ID有效，如果无效则使用默认
+      const validTemplateId = allTemplates.find(t => t.id === config.autoReply.selectedTemplateId) 
+        ? config.autoReply.selectedTemplateId 
+        : DEFAULT_CONFIG.autoReply.selectedTemplateId
+      setSelectedTemplateId(validTemplateId)
       
       setStatus(STATUS_MESSAGES.DATA_LOADED)
     } catch (error: any) {

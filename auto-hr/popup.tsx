@@ -25,13 +25,9 @@ import { usePageStats } from "./hooks/usePageStats"
 import { useBatchProcess } from "./hooks/useBatchProcess"
 import { useScreeningProcess } from "./hooks/useScreeningProcess"
 import { useScan } from "./hooks/useScan"
+import { useUIState } from "./hooks/useUIState"
 
 function IndexPopup() {
-  // 本地状态管理 - 必须在所有自定义hooks之前
-  const [showAddTemplate, setShowAddTemplate] = useState(false)
-  const [newTemplateName, setNewTemplateName] = useState('')
-  const [newTemplateMessage, setNewTemplateMessage] = useState('')
-
   // 使用自定义 hooks - 保持固定顺序
   const {
     applicantCount,
@@ -47,6 +43,18 @@ function IndexPopup() {
     deleteCustomTemplate,
     saveConfig
   } = useDataManager()
+
+  // UI状态管理
+  const {
+    showAddTemplate,
+    newTemplateName,
+    newTemplateMessage,
+    isLoaded: uiLoaded,
+    setShowAddTemplate,
+    setNewTemplateName,
+    setNewTemplateMessage,
+    resetFormState
+  } = useUIState()
 
   const {
     pageStats,
@@ -101,9 +109,7 @@ function IndexPopup() {
     try {
       const templateId = await addCustomTemplate(newTemplateName, newTemplateMessage)
       if (templateId) {
-        setNewTemplateName('')
-        setNewTemplateMessage('')
-        setShowAddTemplate(false)
+        await resetFormState()
         // 自动选择新添加的模板
         await saveConfig(templateId)
       }
@@ -180,6 +186,20 @@ function IndexPopup() {
     if (confirm(STATUS_MESSAGES.CONFIRM_CLEAR_DATA)) {
       await clearApplicantData()
     }
+  }
+
+  // 等待所有状态加载完成
+  if (!uiLoaded || messageTemplates.length === 0) {
+    return (
+      <div style={getContainerStyle()}>
+        <h2 style={getTitleStyle()}>
+          🤖 HR自动化助手
+        </h2>
+        <div style={{ textAlign: 'center', padding: '20px' }}>
+          加载中...
+        </div>
+      </div>
+    )
   }
 
   return (

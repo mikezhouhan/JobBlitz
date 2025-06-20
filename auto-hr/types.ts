@@ -66,11 +66,19 @@ export interface Config {
   }
 }
 
+// UI状态类型
+export interface UIState {
+  showAddTemplate: boolean
+  newTemplateName: string
+  newTemplateMessage: string
+}
+
 // Chrome存储数据类型
 export interface StorageData {
   applicants?: Applicant[]
   config?: Config
   messageTemplates?: MessageTemplate[]
+  uiState?: UIState
   batchProcessing?: BatchProcessing
   scanProcessing?: ScanProcessing
 }

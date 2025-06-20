@@ -56,6 +56,7 @@ export const STORAGE_KEYS = {
   APPLICANTS: 'applicants',
   CONFIG: 'config',
   MESSAGE_TEMPLATES: 'messageTemplates',
+  UI_STATE: 'uiState',
   BATCH_PROCESSING: 'batchProcessing',
   SCAN_PROCESSING: 'scanProcessing'
 } as const
