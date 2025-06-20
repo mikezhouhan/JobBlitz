@@ -1,8 +1,28 @@
+// 默认消息模板
+export const DEFAULT_MESSAGE_TEMPLATES = [
+  {
+    id: 'default',
+    name: '默认模板',
+    message: "您好！感谢您的申请，我们已收到您的简历，会尽快安排面试官查看并与您联系。期待与您进一步沟通！"
+  },
+  {
+    id: 'professional',
+    name: '专业模板',
+    message: "尊敬的候选人，感谢您对我们公司的关注和投递简历。我们会认真评估您的背景和经验，并在三个工作日内与您联系。"
+  },
+  {
+    id: 'friendly',
+    name: '友好模板',  
+    message: "Hi！很高兴看到您的简历～我们团队正在仔细审阅，如果合适的话会尽快联系您安排下一步面试。祝您工作顺利！"
+  }
+]
+
 // 默认配置
 export const DEFAULT_CONFIG = {
   autoReply: {
     enabled: true,
-    replyMessage: "您好！感谢您的申请，我们已收到您的简历，会尽快安排面试官查看并与您联系。期待与您进一步沟通！"
+    selectedTemplateId: 'default',
+    customTemplates: []
   }
 }
 
@@ -35,6 +55,7 @@ export const STATUS_MESSAGES = {
 export const STORAGE_KEYS = {
   APPLICANTS: 'applicants',
   CONFIG: 'config',
+  MESSAGE_TEMPLATES: 'messageTemplates',
   BATCH_PROCESSING: 'batchProcessing',
   SCAN_PROCESSING: 'scanProcessing'
 } as const

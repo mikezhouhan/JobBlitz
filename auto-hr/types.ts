@@ -49,11 +49,20 @@ export interface ScanProcessing {
   active: boolean
 }
 
-// 配置类型
+// 消息模板类型
+export interface MessageTemplate {
+  id: string
+  name: string
+  message: string
+  isCustom?: boolean
+}
+
+// 配置类型  
 export interface Config {
   autoReply: {
     enabled: boolean
-    replyMessage: string
+    selectedTemplateId: string
+    customTemplates: MessageTemplate[]
   }
 }
 
@@ -61,6 +70,7 @@ export interface Config {
 export interface StorageData {
   applicants?: Applicant[]
   config?: Config
+  messageTemplates?: MessageTemplate[]
   batchProcessing?: BatchProcessing
   scanProcessing?: ScanProcessing
 }

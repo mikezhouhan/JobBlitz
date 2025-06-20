@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import type { Applicant } from "./types"
 import { STATUS_MESSAGES } from "./constants"
 import { 
@@ -27,16 +27,25 @@ import { useScreeningProcess } from "./hooks/useScreeningProcess"
 import { useScan } from "./hooks/useScan"
 
 function IndexPopup() {
-  // 使用自定义 hooks
+  // 本地状态管理 - 必须在所有自定义hooks之前
+  const [showAddTemplate, setShowAddTemplate] = useState(false)
+  const [newTemplateName, setNewTemplateName] = useState('')
+  const [newTemplateMessage, setNewTemplateMessage] = useState('')
+
+  // 使用自定义 hooks - 保持固定顺序
   const {
     applicantCount,
-    replyMessage,
+    messageTemplates,
+    selectedTemplateId,
     status,
     setStatus,
     loadData,
     clearApplicantData,
     getApplicantData,
-    updateReplyMessage
+    getCurrentTemplate,
+    addCustomTemplate,
+    deleteCustomTemplate,
+    saveConfig
   } = useDataManager()
 
   const {
@@ -73,12 +82,56 @@ function IndexPopup() {
 
 
 
+  // 处理模板选择
+  const handleTemplateChange = async (templateId: string) => {
+    try {
+      await saveConfig(templateId)
+    } catch (error) {
+      console.error('Failed to save template config:', error)
+    }
+  }
+
+  // 处理添加自定义模板
+  const handleAddTemplate = async () => {
+    if (!newTemplateName.trim() || !newTemplateMessage.trim()) {
+      alert('请填写模板名称和消息内容')
+      return
+    }
+    
+    try {
+      const templateId = await addCustomTemplate(newTemplateName, newTemplateMessage)
+      if (templateId) {
+        setNewTemplateName('')
+        setNewTemplateMessage('')
+        setShowAddTemplate(false)
+        // 自动选择新添加的模板
+        await saveConfig(templateId)
+      }
+    } catch (error) {
+      console.error('Failed to add custom template:', error)
+    }
+  }
+
+  // 处理删除模板
+  const handleDeleteTemplate = async (templateId: string) => {
+    if (confirm('确定要删除这个自定义模板吗？')) {
+      try {
+        await deleteCustomTemplate(templateId)
+      } catch (error) {
+        console.error('Failed to delete template:', error)
+      }
+    }
+  }
+
   // 处理批量操作
   const handleBatchProcess = async () => {
     if (processing) {
       await stopBatchProcess(setStatus)
     } else {
-      await startBatchProcess(replyMessage, pageStats.totalApplicants, setStatus)
+      if (messageTemplates.length > 0) {
+        const currentTemplate = getCurrentTemplate()
+        await startBatchProcess(currentTemplate.message, pageStats.totalApplicants, setStatus)
+      }
     }
   }
 
@@ -152,12 +205,116 @@ function IndexPopup() {
         <label style={getLabelStyle()}>
           📝 自动回复消息模板：
         </label>
-        <textarea
-          value={replyMessage}
-          onChange={(e) => updateReplyMessage(e.target.value)}
-          placeholder="请输入自动回复消息..."
-          style={getTextareaStyle()}
-        />
+        
+        <div style={{ marginBottom: 8 }}>
+          <select
+            value={selectedTemplateId}
+            onChange={(e) => handleTemplateChange(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '6px 8px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              fontSize: '14px',
+              backgroundColor: '#fff'
+            }}
+          >
+            {messageTemplates.map(template => (
+              <option key={template.id} value={template.id}>
+                {template.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{
+          padding: '8px',
+          backgroundColor: '#f8f9fa',
+          border: '1px solid #e9ecef',
+          borderRadius: '4px',
+          fontSize: '12px',
+          color: '#666',
+          marginBottom: 8,
+          maxHeight: '60px',
+          overflow: 'auto'
+        }}>
+          {messageTemplates.length > 0 ? getCurrentTemplate().message : '加载中...'}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <button
+            onClick={() => setShowAddTemplate(!showAddTemplate)}
+            style={{
+              ...getButtonStyle('secondary'),
+              flex: 1,
+              fontSize: '12px',
+              padding: '4px 8px'
+            }}
+          >
+            {showAddTemplate ? '取消添加' : '➕ 添加模板'}
+          </button>
+          
+          {selectedTemplateId && selectedTemplateId.startsWith('custom_') && (
+            <button
+              onClick={() => handleDeleteTemplate(selectedTemplateId)}
+              style={{
+                ...getButtonStyle('danger'),
+                flex: 1,
+                fontSize: '12px',
+                padding: '4px 8px'
+              }}
+            >
+              🗑️ 删除模板
+            </button>
+          )}
+        </div>
+
+        {showAddTemplate && (
+          <div style={{
+            padding: '8px',
+            backgroundColor: '#f8f9fa',
+            border: '1px solid #e9ecef',
+            borderRadius: '4px',
+            marginBottom: 8
+          }}>
+            <input
+              type="text"
+              value={newTemplateName}
+              onChange={(e) => setNewTemplateName(e.target.value)}
+              placeholder="模板名称"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #ddd',
+                borderRadius: '3px',
+                fontSize: '12px',
+                marginBottom: 6
+              }}
+            />
+            <textarea
+              value={newTemplateMessage}
+              onChange={(e) => setNewTemplateMessage(e.target.value)}
+              placeholder="模板内容"
+              style={{
+                ...getTextareaStyle(),
+                height: '50px',
+                fontSize: '12px',
+                marginBottom: 6
+              }}
+            />
+            <button
+              onClick={handleAddTemplate}
+              style={{
+                ...getButtonStyle('primary'),
+                width: '100%',
+                fontSize: '12px',
+                padding: '4px 8px'
+              }}
+            >
+              保存模板
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{ marginBottom: 16 }}>
