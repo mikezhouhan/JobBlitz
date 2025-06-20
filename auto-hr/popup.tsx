@@ -23,6 +23,7 @@ import {
 import { useDataManager } from "./hooks/useDataManager"
 import { usePageStats } from "./hooks/usePageStats"
 import { useBatchProcess } from "./hooks/useBatchProcess"
+import { useScreeningProcess } from "./hooks/useScreeningProcess"
 import { useScan } from "./hooks/useScan"
 
 function IndexPopup() {
@@ -52,6 +53,12 @@ function IndexPopup() {
   } = useBatchProcess()
 
   const {
+    processing: screeningProcessing,
+    startScreeningProcess,
+    stopScreeningProcess
+  } = useScreeningProcess()
+
+  const {
     scanning,
     startScan
   } = useScan()
@@ -72,6 +79,15 @@ function IndexPopup() {
       await stopBatchProcess(setStatus)
     } else {
       await startBatchProcess(replyMessage, pageStats.totalApplicants, setStatus)
+    }
+  }
+
+  // 处理初筛批量操作
+  const handleScreeningProcess = async () => {
+    if (screeningProcessing) {
+      await stopScreeningProcess(setStatus)
+    } else {
+      await startScreeningProcess(pageStats.totalApplicants, setStatus)
     }
   }
 
@@ -121,7 +137,7 @@ function IndexPopup() {
       
       <div style={getStatusBarStyle()}>
         <div style={{ fontSize: 12, marginBottom: 4 }}>
-          状态: <strong style={{ color: processing ? '#ff6b35' : '#28a745' }}>{status}</strong>
+          状态: <strong style={{ color: (processing || screeningProcessing) ? '#ff6b35' : '#28a745' }}>{status}</strong>
         </div>
         <div style={{ fontSize: 12, marginBottom: 4 }}>
           当前页面: <strong>{pageStats.totalApplicants} 个申请人</strong>
@@ -145,12 +161,27 @@ function IndexPopup() {
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <button
-          onClick={handleBatchProcess}
-          style={getLargeButtonStyle('primary', processing)}
-        >
-          {processing ? '⏹️ 停止批量处理' : '💬 批量沟通'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <button
+            onClick={handleBatchProcess}
+            style={{
+              ...getLargeButtonStyle('primary', processing),
+              flex: 1
+            }}
+          >
+            {processing ? '⏹️ 停止批量处理' : '💬 批量沟通'}
+          </button>
+          
+          <button
+            onClick={handleScreeningProcess}
+            style={{
+              ...getLargeButtonStyle('success', screeningProcessing),
+              flex: 1
+            }}
+          >
+            {screeningProcessing ? '⏹️ 停止初筛' : '✅ 通过初筛'}
+          </button>
+        </div>
         
         <div style={getButtonGroupStyle()}>
           <button
@@ -209,10 +240,12 @@ function IndexPopup() {
 
       <div style={getInfoTextStyle()}>
         <div>💡 使用说明:</div>
-        <div>1. 在申请人列表页面点击"批量沟通"或"仅收集数据"</div>
-        <div>2. 系统会自动点击每个申请人进入详情页</div>
-        <div>3. 获取手机号和邮箱，并发送沟通消息（如果选择批量沟通）</div>
-        <div>4. 自动处理所有分页，完成后可导出CSV文件</div>
+        <div>1. 在申请人列表页面选择操作类型:</div>
+        <div>   • "批量沟通": 发送消息并收集数据</div>
+        <div>   • "通过初筛": 一键通过所有申请人初筛</div>
+        <div>   • "仅收集数据": 只收集联系信息</div>
+        <div>2. 系统会自动处理所有分页的申请人</div>
+        <div>3. 完成后可导出CSV文件查看收集的数据</div>
       </div>
     </div>
   )

@@ -14,6 +14,9 @@ export const STATUS_MESSAGES = {
   BATCH_PROCESSING: "正在批量沟通...",
   BATCH_STARTED: "批量处理已启动，请查看控制台日志",
   BATCH_STOPPED: "批量处理已停止",
+  BATCH_SCREENING: "正在一键通过初筛...",
+  SCREENING_STARTED: "初筛批量处理已启动，请查看控制台日志",
+  SCREENING_STOPPED: "初筛批量处理已停止",
   SCANNING: "正在扫描申请人信息...",
   SCAN_COMPLETED: "扫描完成",
   SCAN_STOPPED: "已停止收集",
@@ -62,6 +65,7 @@ export const MESSAGE_ACTIONS = {
   PING: 'ping',
   GET_PAGE_STATS: 'getPageStats',
   START_BATCH_PROCESS: 'startBatchProcess',
+  START_SCREENING_PROCESS: 'startScreeningProcess',
   SCAN_APPLICANTS: 'scanApplicants',
   DEBUG_PAGE: 'debugPage',
   UPDATE_PAGE_STATS: 'updatePageStats'

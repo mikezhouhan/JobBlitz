@@ -58,6 +58,15 @@ export const executeDirectBatch = async (tabId: number, replyMessage: string): P
   await scripting.executeFunction(tabId, batchProcessDirectly, [replyMessage])
 }
 
+// 执行直接初筛批量处理
+export const executeDirectScreening = async (tabId: number): Promise<void> => {
+  if (!scripting.isAvailable()) {
+    throw new Error("Chrome API 不可用，无法执行初筛批量处理")
+  }
+
+  await scripting.executeFunction(tabId, screeningProcessDirectly, [])
+}
+
 // 完整的批量处理函数（从backup恢复）
 function batchProcessDirectly(replyMessage: string) {
   
@@ -395,4 +404,166 @@ export const stopBatchProcessing = async (): Promise<void> => {
   await storage.set({
     [STORAGE_KEYS.BATCH_PROCESSING]: batchProcessing
   })
+}
+
+// 初筛批量处理函数
+function screeningProcessDirectly() {
+  let totalProcessedCount = 0
+  let currentPageProcessedCount = 0
+  let isProcessing = true
+  let failedCount = 0
+  
+  // 查找分页元素
+  function findNextPageButton() {
+    const nextPageSelectors = [
+      '.el-pagination button.btn-next:not([disabled])',
+      '.el-pagination .el-icon-arrow-right:not(.is-disabled)',
+      '.pagination-next:not([disabled])',
+      '[aria-label="下一页"]:not([disabled])',
+      'button:has(.el-icon-arrow-right):not([disabled])',
+      '.el-pager + button:not([disabled])'
+    ]
+    
+    for (const selector of nextPageSelectors) {
+      try {
+        const button = document.querySelector(selector)
+        if (button && !(button as HTMLButtonElement).disabled) {
+          return button
+        }
+      } catch (e) {}
+    }
+    return null
+  }
+  
+  // 处理当前页面的申请人
+  async function processCurrentPage() {
+    const cards = document.querySelectorAll('.resume-item')
+    
+    currentPageProcessedCount = 0
+    
+    for (let index = 0; index < cards.length; index++) {
+      // 检查是否应该停止
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        const result = await chrome.storage.local.get(['batchProcessing'])
+        if (result.batchProcessing && (!result.batchProcessing.active || result.batchProcessing.stopped)) {
+          isProcessing = false
+          break
+        }
+      }
+      
+      const card = cards[index]
+      try {
+        // 提取申请人姓名
+        const nameElement = card.querySelector('.resume-info__center-name')
+        const applicantName = nameElement?.textContent?.trim() || `申请人${index + 1}`
+        
+        // 查找通过初筛按钮
+        const buttons = card.querySelectorAll('button')
+        let screeningButton: HTMLButtonElement | null = null
+        
+        for (const button of buttons) {
+          const buttonText = button.textContent?.trim()
+          if (buttonText === '通过初筛' || buttonText === '初筛通过' || buttonText === '通过') {
+            screeningButton = button as HTMLButtonElement
+            break
+          }
+        }
+        
+        if (!screeningButton) {
+          // 如果没有找到初筛按钮，跳过该申请人
+          continue
+        }
+        
+        // 点击通过初筛按钮
+        ;(screeningButton as HTMLElement).click()
+        
+        // 等待操作完成
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
+        totalProcessedCount++
+        currentPageProcessedCount++
+        
+        // 更新处理进度到存储
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+          try {
+            await chrome.storage.local.set({
+              batchProcessing: {
+                active: true,
+                processedCount: totalProcessedCount,
+                currentPage: Math.ceil((totalProcessedCount / 10)),
+                totalPages: null,
+                startTime: new Date().toISOString()
+              }
+            })
+          } catch (e) {
+            // 更新进度失败 - 静默处理
+          }
+        }
+        
+      } catch (error) {
+        failedCount++
+      }
+      
+      // 处理间隔
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+  }
+  
+  // 主处理函数
+  async function startProcessing() {
+    try {
+      while (isProcessing) {
+        // 处理当前页面
+        await processCurrentPage()
+        
+        if (!isProcessing) break
+        
+        // 查找下一页按钮
+        const nextButton = findNextPageButton()
+        if (!nextButton) {
+          break
+        }
+        
+        ;(nextButton as HTMLElement).click()
+        
+        // 等待页面加载
+        await new Promise(resolve => setTimeout(resolve, 3000))
+      }
+      
+      // 更新完成状态
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        await chrome.storage.local.set({
+          batchProcessing: {
+            active: false,
+            processedCount: totalProcessedCount,
+            totalPages: Math.ceil((totalProcessedCount / 10)),
+            completed: true,
+            failedCount: failedCount
+          }
+        })
+        
+        // 通知popup更新
+        try {
+          chrome.runtime.sendMessage({ action: 'updatePageStats' })
+        } catch (e) {
+          // 发送更新消息失败 - 静默处理
+        }
+      }
+      
+    } catch (error) {
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        await chrome.storage.local.set({
+          batchProcessing: {
+            active: false,
+            error: error.message,
+            processedCount: totalProcessedCount,
+            failedCount: failedCount
+          }
+        })
+      }
+    }
+  }
+  
+  // 开始处理
+  startProcessing()
 }

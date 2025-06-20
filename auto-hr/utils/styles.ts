@@ -72,20 +72,40 @@ export const getButtonStyle = (
 
 // 获取大按钮样式
 export const getLargeButtonStyle = (
-  variant: 'primary' | 'danger' = 'primary',
+  variant: 'primary' | 'danger' | 'success' = 'primary',
   processing: boolean = false
-) => ({
-  width: '100%',
-  padding: '12px 16px',
-  backgroundColor: processing ? '#dc3545' : variant === 'primary' ? '#007cff' : '#dc3545',
-  color: 'white',
-  border: 'none',
-  borderRadius: 4,
-  fontSize: 14,
-  fontWeight: 'bold',
-  cursor: 'pointer',
-  marginBottom: 8
-})
+) => {
+  let backgroundColor = '#007cff' // default primary
+  
+  if (processing) {
+    backgroundColor = '#dc3545' // red for processing/stop
+  } else {
+    switch (variant) {
+      case 'primary':
+        backgroundColor = '#007cff'
+        break
+      case 'danger':
+        backgroundColor = '#dc3545'
+        break
+      case 'success':
+        backgroundColor = '#28a745'
+        break
+    }
+  }
+
+  return {
+    width: '100%',
+    padding: '12px 16px',
+    backgroundColor,
+    color: 'white',
+    border: 'none',
+    borderRadius: 4,
+    fontSize: 14,
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    marginBottom: 8
+  }
+}
 
 // 获取表单组样式
 export const getFormGroupStyle = () => ({
