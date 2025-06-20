@@ -26,6 +26,7 @@ import { useBatchProcess } from "./hooks/useBatchProcess"
 import { useScreeningProcess } from "./hooks/useScreeningProcess"
 import { useScan } from "./hooks/useScan"
 import { useUIState } from "./hooks/useUIState"
+import { storageDebug } from "./utils/storageDebug"
 
 function IndexPopup() {
   // 使用自定义 hooks - 保持固定顺序
@@ -160,6 +161,13 @@ function IndexPopup() {
     await debugPage(setStatus)
   }
 
+  // 处理存储调试（隐藏功能，双击标题触发）
+  const handleStorageDebug = async () => {
+    console.log('🔍 开始存储调试...')
+    await storageDebug.testStorage()
+    await storageDebug.logAllData()
+  }
+
   // 处理CSV导出
   const handleExportCSV = async () => {
     if (!checkDataAvailability(applicantCount)) {
@@ -204,7 +212,11 @@ function IndexPopup() {
 
   return (
     <div style={getContainerStyle()}>
-      <h2 style={getTitleStyle()}>
+      <h2 
+        style={{ ...getTitleStyle(), cursor: 'pointer' }}
+        onDoubleClick={handleStorageDebug}
+        title="双击查看存储调试信息"
+      >
         🤖 HR自动化助手
       </h2>
       

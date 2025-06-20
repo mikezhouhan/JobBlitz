@@ -88,7 +88,12 @@ export const useUIState = () => {
 
   // 初始化加载
   useEffect(() => {
-    loadUIState()
+    // 确保在Chrome API可用后再加载
+    const timer = setTimeout(() => {
+      loadUIState()
+    }, 50)
+    
+    return () => clearTimeout(timer)
   }, [])
 
   return {

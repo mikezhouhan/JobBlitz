@@ -24,6 +24,9 @@ export const useDataManager = () => {
     try {
       if (!isChromeApiAvailable()) {
         setStatus(STATUS_MESSAGES.CHROME_API_UNAVAILABLE)
+        // 即使Chrome API不可用，也要设置默认模板以确保UI可用
+        setMessageTemplates(DEFAULT_MESSAGE_TEMPLATES)
+        setSelectedTemplateId(DEFAULT_CONFIG.autoReply.selectedTemplateId)
         return
       }
 
@@ -47,9 +50,18 @@ export const useDataManager = () => {
         : DEFAULT_CONFIG.autoReply.selectedTemplateId
       setSelectedTemplateId(validTemplateId)
       
+      // 如果是首次运行或配置为空，保存默认配置
+      if (!data[STORAGE_KEYS.CONFIG] || Object.keys(data[STORAGE_KEYS.CONFIG]).length === 0) {
+        await saveConfig(validTemplateId)
+      }
+      
       setStatus(STATUS_MESSAGES.DATA_LOADED)
     } catch (error: any) {
+      console.error('Failed to load data:', error)
       setStatus(`加载失败: ${error.message}`)
+      // 出错时至少设置默认模板
+      setMessageTemplates(DEFAULT_MESSAGE_TEMPLATES)
+      setSelectedTemplateId(DEFAULT_CONFIG.autoReply.selectedTemplateId)
     }
   }
 
@@ -184,7 +196,18 @@ export const useDataManager = () => {
 
   // 初始化加载数据
   useEffect(() => {
-    loadData()
+    // 延迟一点点时间确保Chrome API完全可用
+    const timer = setTimeout(async () => {
+      await loadData()
+      
+      // 在开发环境中自动运行存储测试
+      if (process.env.NODE_ENV === 'development') {
+        const { storageDebug } = await import('../utils/storageDebug')
+        await storageDebug.testStorage()
+      }
+    }, 100)
+    
+    return () => clearTimeout(timer)
   }, [])
 
   return {
