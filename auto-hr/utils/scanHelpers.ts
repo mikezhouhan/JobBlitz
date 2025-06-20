@@ -41,7 +41,6 @@ export const executeDirectScan = async (tabId: number): Promise<Applicant[] | nu
 
 // 完整的扫描函数（从backup恢复）
 function scanApplicantsDirectly() {
-  console.log("🔍 开始扫描所有页面的申请人信息")
   
   let allApplicants: any[] = []
   let pageNumber = 1
@@ -78,7 +77,6 @@ function scanApplicantsDirectly() {
       if (typeof chrome !== 'undefined' && chrome.storage) {
         const result = await chrome.storage.local.get(['scanProcessing'])
         if (result.scanProcessing && !result.scanProcessing.active) {
-          console.log("扫描已被用户停止")
           break
         }
       }
@@ -109,7 +107,6 @@ function scanApplicantsDirectly() {
           const positionMatch = headerText.match(/^([^\d]+?)(?:\s*\d{4}|\s*转发|$)/)
           if (positionMatch) {
             listPosition = positionMatch[1].trim()
-            console.log(`从卡片顶部获取职位: ${listPosition}`)
           }
         }
         
@@ -121,7 +118,6 @@ function scanApplicantsDirectly() {
             if (text && text.length > 2 && text.length < 50 && 
                 !text.includes('转发') && !text.match(/\d{4}-\d{2}-\d{2}/)) {
               listPosition = text.split(/\s{2,}/)[0] // 取第一部分（通常是职位）
-              console.log(`从卡片顶部元素获取职位: ${listPosition}`)
               break
             }
           }
@@ -144,12 +140,10 @@ function scanApplicantsDirectly() {
         }
         
         // 点击卡片进入详情页
-        console.log(`点击第 ${index + 1} 个申请人卡片进入详情页...`)
         const cardClickable = card.querySelector('.resume-info__center') || card
         ;(cardClickable as HTMLElement).click()
         
         // 等待详情页加载
-        console.log(`等待详情页加载...`)
         await new Promise(resolve => setTimeout(resolve, 3000))
         
         // 检查页面是否加载完成（查找关键元素）
@@ -159,7 +153,6 @@ function scanApplicantsDirectly() {
           // 检查是否有加载指示器
           const loadingMask = document.querySelector('.el-loading-mask, .loading, [class*="loading"]')
           if (loadingMask) {
-            console.log(`检测到加载指示器，等待加载完成...`)
             await new Promise(resolve => setTimeout(resolve, 1000))
             continue
           }
@@ -169,14 +162,12 @@ function scanApplicantsDirectly() {
           const phoneEmailContainer = document.querySelector('.phone-email')
           
           if (phoneEmailElements.length >= 2 || (phoneEmailContainer && phoneEmailContainer.textContent!.includes('@'))) {
-            console.log(`找到联系信息元素，页面加载完成`)
             // 再等待一下确保内容完全渲染
             await new Promise(resolve => setTimeout(resolve, 1000))
             break
           }
           
           retryCount++
-          console.log(`联系信息尚未加载，等待中... (重试 ${retryCount}/${maxRetries})`)
           await new Promise(resolve => setTimeout(resolve, 2000))
         }
         
@@ -196,14 +187,12 @@ function scanApplicantsDirectly() {
             const phoneMatch = text.match(/(?:\+86\s*)?1[3-9]\d{9}/)
             if (phoneMatch && !phoneNumber) {
               phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
-              console.log("从 phone-email-item 提取手机号:", phoneNumber)
             }
             
             // 检查是否包含邮箱
             const emailMatch = text.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
             if (emailMatch && !email) {
               email = emailMatch[0]
-              console.log("从 phone-email-item 提取邮箱:", email)
             }
           })
         }
@@ -213,14 +202,12 @@ function scanApplicantsDirectly() {
           const phoneEmailElement = document.querySelector('.phone-email, [class*="phone-email"]')
           if (phoneEmailElement && !phoneEmailElement.classList.contains('phone-email-item')) {
             const text = phoneEmailElement.textContent || ''
-            console.log("找到 phone-email 组合元素:", text)
             
             // 提取手机号（可能带有 +86 前缀）
             if (!phoneNumber) {
               const phoneMatch = text.match(/(?:\+86\s*)?1[3-9]\d{9}/)
               if (phoneMatch) {
                 phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
-                console.log("提取手机号:", phoneNumber)
               }
             }
             
@@ -232,7 +219,6 @@ function scanApplicantsDirectly() {
                                 text.match(/(?<!\d)[\w.-]+@[\w.-]+\.[\w]{2,}/)
               if (emailMatch) {
                 email = emailMatch[0]
-                console.log("提取邮箱:", email)
               }
             }
           }
@@ -256,7 +242,6 @@ function scanApplicantsDirectly() {
                 const phoneMatch = text.match(/(?:\+86\s*)?1[3-9]\d{9}/)
                 if (phoneMatch) {
                   phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
-                  console.log("找到手机号:", phoneNumber)
                   break
                 }
               }
@@ -272,7 +257,6 @@ function scanApplicantsDirectly() {
                 const phoneMatch = text.match(/(?:\+86\s*)?1[3-9]\d{9}/)
                 if (phoneMatch) {
                   phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
-                  console.log("从文本内容找到手机号:", phoneNumber)
                   break
                 }
               }
@@ -296,7 +280,6 @@ function scanApplicantsDirectly() {
                 const emailMatch = text.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
                 if (emailMatch) {
                   email = emailMatch[0]
-                  console.log("找到邮箱:", email)
                   break
                 }
               }
@@ -312,7 +295,6 @@ function scanApplicantsDirectly() {
                 const emailMatch = text.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
                 if (emailMatch) {
                   email = emailMatch[0]
-                  console.log("从文本内容找到邮箱:", email)
                   break
                 }
               }
@@ -328,7 +310,6 @@ function scanApplicantsDirectly() {
             const phoneMatch = bodyText.match(/(?:\+86\s*)?1[3-9]\d{9}/)
             if (phoneMatch) {
               phoneNumber = phoneMatch[0].replace(/\+86\s*/, '')
-              console.log("从页面文本中找到手机号:", phoneNumber)
             }
           }
           
@@ -336,13 +317,11 @@ function scanApplicantsDirectly() {
             const emailMatch = bodyText.match(/[\w.-]+@[\w.-]+\.[\w]{2,}/)
             if (emailMatch) {
               email = emailMatch[0]
-              console.log("从页面文本中找到邮箱:", email)
             }
           }
         }
         
         // 查找求职意向
-        console.log("查找求职意向...")
         let jobIntention = ''
         
         // 基于HTML结构查找求职意向
@@ -352,7 +331,6 @@ function scanApplicantsDirectly() {
           const match = text.match(/求职意向[：:]\s*(.+)/)
           if (match) {
             jobIntention = match[1].trim()
-            console.log(`找到求职意向: ${jobIntention}`)
           }
         }
         
@@ -367,7 +345,6 @@ function scanApplicantsDirectly() {
                 const match = text.match(/求职意向[：:]\s*(.+)/)
                 if (match) {
                   jobIntention = match[1].trim()
-                  console.log(`从 main-detail-sub 找到求职意向: ${jobIntention}`)
                 }
               }
             })
@@ -375,7 +352,6 @@ function scanApplicantsDirectly() {
         }
         
         // 查找投递职位（从详情页）
-        console.log("查找投递职位（详情页）...")
         let detailPosition = ''
         const positionTitleElement = document.querySelector('.resume-tools__title')
         if (positionTitleElement) {
@@ -383,11 +359,9 @@ function scanApplicantsDirectly() {
           const match = text.match(/投递职位[：:]\s*(.+?)(?:·|$)/)
           if (match) {
             detailPosition = match[1].trim()
-            console.log(`找到投递职位: ${detailPosition}`)
           } else if (text) {
             // 如果没有"投递职位："前缀，尝试直接使用文本
             detailPosition = text.replace(/·.+$/, '').trim()
-            console.log(`找到投递职位（无前缀）: ${detailPosition}`)
           }
         }
         
@@ -397,7 +371,6 @@ function scanApplicantsDirectly() {
         }
         
         // 处理在线简历
-        console.log("处理在线简历...")
         let onlineResume = ''
         const resumeOnlineDiv = document.querySelector('.resume-online')
         if (resumeOnlineDiv) {
@@ -417,22 +390,18 @@ function scanApplicantsDirectly() {
           
           if (resumeContent.length > 0) {
             onlineResume = resumeContent.join(' | ')
-            console.log(`找到在线简历完整内容: ${onlineResume.substring(0, 200)}...`)
           } else {
             // 如果没有找到内容，尝试获取所有sections的标题
             const resumeSections = resumeOnlineDiv.querySelectorAll('.resume-online-item__title')
             const sectionTitles = Array.from(resumeSections).map(el => el.textContent?.trim()).filter(Boolean)
             if (sectionTitles.length > 0) {
               onlineResume = `在线简历 - 包含: ${sectionTitles.join(', ')}`
-              console.log(`找到在线简历结构: ${onlineResume}`)
             } else {
               onlineResume = '在线简历内容无法获取'
-              console.log("无法获取在线简历内容")
             }
           }
         } else {
           onlineResume = '无在线简历'
-          console.log("未找到在线简历")
         }
         
         // 更新申请人信息
@@ -441,12 +410,10 @@ function scanApplicantsDirectly() {
         applicant.jobIntention = jobIntention
         applicant.onlineResume = onlineResume
         
-        console.log(`申请人信息: ${name}, 手机: ${phoneNumber}, 邮箱: ${email}, 职位: ${applicant.position}`)
         
         pageApplicants.push(applicant)
         
         // 返回到申请人列表页（多种尝试方法）
-        console.log("返回申请人列表页...")
         
         // 方法1: 查找返回按钮
         const backButtonSelectors = [
@@ -460,7 +427,6 @@ function scanApplicantsDirectly() {
         for (const selector of backButtonSelectors) {
           const backButton = document.querySelector(selector)
           if (backButton) {
-            console.log(`使用返回按钮: ${selector}`)
             ;(backButton as HTMLElement).click()
             returned = true
             break
@@ -469,7 +435,6 @@ function scanApplicantsDirectly() {
         
         // 方法2: 如果没有返回按钮，尝试浏览器后退
         if (!returned) {
-          console.log("没有找到返回按钮，使用浏览器后退")
           window.history.back()
         }
         
@@ -482,25 +447,21 @@ function scanApplicantsDirectly() {
         while (backRetryCount < maxBackRetries) {
           const currentCards = document.querySelectorAll('.resume-item')
           if (currentCards.length > 0) {
-            console.log("成功返回申请人列表页")
             break
           }
           
-          console.log(`尚未返回申请人列表页，重试中... (${backRetryCount + 1}/${maxBackRetries})`)
           window.history.back()
           await new Promise(resolve => setTimeout(resolve, 2000))
           backRetryCount++
         }
         
       } catch (error) {
-        console.error(`处理申请人 ${index + 1} 时出错:`, error)
-        
         // 尝试返回申请人列表页
         try {
           window.history.back()
           await new Promise(resolve => setTimeout(resolve, 2000))
         } catch (e) {
-          console.error("返回申请人列表页失败:", e)
+          // 返回申请人列表页失败 - 静默处理
         }
       }
       
@@ -513,7 +474,6 @@ function scanApplicantsDirectly() {
   
   // 主扫描函数
   async function startScanning() {
-    console.log(`开始扫描第 ${pageNumber} 页`)
     
     try {
       while (true) {
@@ -521,7 +481,6 @@ function scanApplicantsDirectly() {
         const pageApplicants = await scanCurrentPage()
         allApplicants.push(...pageApplicants)
         
-        console.log(`第 ${pageNumber} 页扫描完成，找到 ${pageApplicants.length} 个申请人`)
         
         // 保存当前进度到存储
         if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -536,20 +495,17 @@ function scanApplicantsDirectly() {
             const updatedApplicants = [...existingApplicants, ...newApplicants]
             await chrome.storage.local.set({ applicants: updatedApplicants })
             
-            console.log(`已保存 ${newApplicants.length} 个新申请人到存储，总计: ${updatedApplicants.length}`)
           } catch (e) {
-            console.log("保存进度失败:", e)
+            // 保存进度失败 - 静默处理
           }
         }
         
         // 查找下一页按钮
         const nextButton = findNextPageButton()
         if (!nextButton) {
-          console.log("没有下一页，扫描完成")
           break
         }
         
-        console.log("点击下一页继续扫描")
         ;(nextButton as HTMLElement).click()
         
         // 等待下一页加载
@@ -559,12 +515,10 @@ function scanApplicantsDirectly() {
         
         // 安全检查：避免无限循环
         if (pageNumber > 50) {
-          console.log("已达到最大页数限制，停止扫描")
           break
         }
       }
       
-      console.log(`扫描完成! 总计扫描了 ${pageNumber} 页，找到 ${allApplicants.length} 个申请人`)
       
       // 最终保存状态
       if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -576,7 +530,6 @@ function scanApplicantsDirectly() {
       return allApplicants
       
     } catch (error) {
-      console.error("扫描过程中发生错误:", error)
       
       if (typeof chrome !== 'undefined' && chrome.storage) {
         await chrome.storage.local.set({

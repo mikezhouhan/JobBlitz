@@ -49,14 +49,12 @@ export const useBatchProcess = () => {
       if (contentScriptSuccess) {
         setStatus(STATUS_MESSAGES.BATCH_STARTED)
       } else {
-        console.log("内容脚本未响应，使用直接执行方式")
         
         // 直接执行批量处理
         try {
           await executeDirectBatch(tab.id!, replyMessage)
           setStatus("批量处理已启动，请勿关闭此页面")
         } catch (scriptError: any) {
-          console.error("执行批量处理脚本失败:", scriptError)
           setStatus(`批量处理失败: ${scriptError.message}`)
           setProcessing(false)
           return
@@ -79,7 +77,6 @@ export const useBatchProcess = () => {
       setProcessing(false)
       setStatus(STATUS_MESSAGES.BATCH_STOPPED)
     } catch (error: any) {
-      console.error('停止批量处理失败:', error)
       setStatus(`停止失败: ${error.message}`)
     }
   }, [])

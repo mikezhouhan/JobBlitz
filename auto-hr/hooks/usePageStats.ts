@@ -1,8 +1,7 @@
 import { useState, useCallback } from "react"
 import type { PageStats } from "../types"
-import { STATUS_MESSAGES, MESSAGE_ACTIONS, DELAYS } from "../constants"
+import { STATUS_MESSAGES, DELAYS } from "../constants"
 import { getCurrentTab, messaging, scripting } from "../utils/chrome"
-import { delays } from "../utils/async"
 
 /**
  * 页面统计 Hook
@@ -26,7 +25,6 @@ export const usePageStats = () => {
       if (isContentScriptReady) {
         // 内容脚本已加载，获取统计信息
         const response = await messaging.getPageStats(tab.id)
-        console.log('页面统计响应:', response)
         
         if (response && typeof response.totalApplicants === 'number') {
           setPageStats(response)
@@ -37,7 +35,6 @@ export const usePageStats = () => {
           return null
         }
       } else {
-        console.log('内容脚本未响应，尝试手动检测')
         setStatus('正在手动检测页面...')
         
         // 尝试直接执行脚本检测
@@ -52,7 +49,6 @@ export const usePageStats = () => {
               return stats
             }
           } catch (scriptError) {
-            console.error('执行脚本失败:', scriptError)
             setStatus('无法检测页面内容')
           }
         } else {
@@ -62,7 +58,6 @@ export const usePageStats = () => {
       
       return null
     } catch (error: any) {
-      console.error('获取页面统计失败:', error)
       setStatus(`检测失败: ${error.message}`)
       return null
     }

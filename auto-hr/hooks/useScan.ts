@@ -50,7 +50,6 @@ export const useScan = () => {
       if (contentScriptSuccess) {
         setStatus(STATUS_MESSAGES.SCAN_COMPLETED)
       } else {
-        console.log("内容脚本未响应，使用直接执行方式")
 
         // 设置扫描状态
         await setScanStatus(true)
@@ -66,7 +65,6 @@ export const useScan = () => {
             setStatus("扫描完成，但未找到有效数据")
           }
         } catch (scriptError: any) {
-          console.error("执行扫描脚本失败:", scriptError)
           setStatus(`扫描失败: ${scriptError.message}`)
         }
       }
@@ -91,7 +89,6 @@ export const useScan = () => {
       await setScanStatus(false)
       setStatus(STATUS_MESSAGES.SCAN_STOPPED)
     } catch (error: any) {
-      console.error('停止扫描失败:', error)
       setStatus(`停止扫描失败: ${error.message}`)
     }
   }, [])

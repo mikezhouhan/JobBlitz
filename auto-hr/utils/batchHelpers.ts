@@ -1,5 +1,5 @@
 import type { BatchProcessing, Config } from "../types"
-import { STORAGE_KEYS, STATUS_MESSAGES } from "../constants"
+import { STORAGE_KEYS } from "../constants"
 import { getCurrentTab, messaging, scripting, storage } from "./chrome"
 
 /**
@@ -60,8 +60,6 @@ export const executeDirectBatch = async (tabId: number, replyMessage: string): P
 
 // 完整的批量处理函数（从backup恢复）
 function batchProcessDirectly(replyMessage: string) {
-  console.log("🚀 开始直接批量处理")
-  console.log("回复消息模板:", replyMessage)
   
   let totalProcessedCount = 0
   let currentPageProcessedCount = 0
@@ -93,10 +91,7 @@ function batchProcessDirectly(replyMessage: string) {
   
   // 处理当前页面的申请人
   async function processCurrentPage() {
-    console.log(`开始处理第 ${Math.ceil((totalProcessedCount / 10) + 1)} 页`)
-    
     const cards = document.querySelectorAll('.resume-item')
-    console.log(`当前页面找到 ${cards.length} 个申请人`)
     
     currentPageProcessedCount = 0
     
@@ -105,7 +100,6 @@ function batchProcessDirectly(replyMessage: string) {
       if (typeof chrome !== 'undefined' && chrome.storage) {
         const result = await chrome.storage.local.get(['batchProcessing'])
         if (result.batchProcessing && (!result.batchProcessing.active || result.batchProcessing.stopped)) {
-          console.log("批量处理已被用户停止")
           isProcessing = false
           break
         }
@@ -117,7 +111,6 @@ function batchProcessDirectly(replyMessage: string) {
         const nameElement = card.querySelector('.resume-info__center-name')
         const applicantName = nameElement?.textContent?.trim() || `申请人${index + 1}`
         
-        console.log(`开始处理第 ${index + 1} 个申请人: ${applicantName}`)
         
         // 查找沟通按钮 - 使用原始逻辑
         const buttons = card.querySelectorAll('button')
@@ -131,12 +124,10 @@ function batchProcessDirectly(replyMessage: string) {
         }
         
         if (!communicateButton) {
-          console.log(`申请人 ${applicantName} 没有找到沟通按钮，跳过`)
           continue
         }
         
         // 点击沟通按钮
-        console.log(`点击申请人 ${applicantName} 的沟通按钮`)
         ;(communicateButton as HTMLElement).click()
         
         // 等待聊天界面加载
@@ -147,13 +138,11 @@ function batchProcessDirectly(replyMessage: string) {
         
         // 如果没找到，再等一会儿
         if (!chatInput) {
-          console.log("未找到输入框，再等待2秒...")
           await new Promise(resolve => setTimeout(resolve, 2000))
           chatInput = document.querySelector('textarea[placeholder="请输入"]') as HTMLTextAreaElement
         }
         
         if (!chatInput) {
-          console.log(`申请人 ${applicantName} 未找到聊天输入框`)
           failedCount++
           
           // 尝试返回列表
@@ -162,7 +151,6 @@ function batchProcessDirectly(replyMessage: string) {
           continue
         }
         
-        console.log("找到聊天输入框，准备输入消息")
         
         // 先点击输入框，确保获得焦点
         chatInput.click()
@@ -182,22 +170,16 @@ function batchProcessDirectly(replyMessage: string) {
           data: replyMessage
         }))
         
-        console.log("消息输入完成:", chatInput.value)
         
         // 等待一下确保消息输入完成
         await new Promise(resolve => setTimeout(resolve, 1000))
         
         // 使用回车键发送消息（已验证的方法）
-        console.log("准备使用回车键发送消息...")
         
         // 确保输入框有焦点
         chatInput.focus()
         
-        // 按照原始成功的事件序列
-        console.log("触发回车键事件序列")
-        
         // 1. KEYDOWN
-        console.log("1. 触发 keydown")
         const keydownEvent = new KeyboardEvent('keydown', {
           key: 'Enter',
           keyCode: 13,
@@ -211,7 +193,6 @@ function batchProcessDirectly(replyMessage: string) {
         await new Promise(resolve => setTimeout(resolve, 10))
         
         // 2. KEYPRESS
-        console.log("2. 触发 keypress")
         const keypressEvent = new KeyboardEvent('keypress', {
           key: 'Enter',
           keyCode: 13,
@@ -225,7 +206,6 @@ function batchProcessDirectly(replyMessage: string) {
         await new Promise(resolve => setTimeout(resolve, 10))
         
         // 3. INPUT (关键！回车键也会触发input事件)
-        console.log("3. 触发 input")
         const inputEvent = new InputEvent('input', {
           bubbles: true,
           cancelable: true,
@@ -236,7 +216,6 @@ function batchProcessDirectly(replyMessage: string) {
         await new Promise(resolve => setTimeout(resolve, 10))
         
         // 4. KEYUP
-        console.log("4. 触发 keyup")
         const keyupEvent = new KeyboardEvent('keyup', {
           key: 'Enter',
           keyCode: 13,
@@ -248,13 +227,11 @@ function batchProcessDirectly(replyMessage: string) {
         })
         chatInput.dispatchEvent(keyupEvent)
         
-        console.log("回车键事件序列完成，消息应该已发送")
         
         // 等待消息发送完成（增加延迟避免网络超时）
         await new Promise(resolve => setTimeout(resolve, 3000))
         
         // 返回列表页面（点击返回或关闭按钮）
-        console.log("准备返回列表页面...")
         
         // 基于原始HTML结构，关闭按钮在 .chat-close 中
         let backButton = document.querySelector('.chat-close')
@@ -271,11 +248,9 @@ function batchProcessDirectly(replyMessage: string) {
         }
         
         if (backButton) {
-          console.log("找到关闭按钮，返回列表页面")
           ;(backButton as HTMLElement).click()
         } else {
           // 如果没有找到返回按钮，尝试浏览器后退
-          console.log("使用浏览器后退返回列表")
           window.history.back()
         }
         
@@ -285,7 +260,6 @@ function batchProcessDirectly(replyMessage: string) {
         totalProcessedCount++
         currentPageProcessedCount++
         
-        console.log(`成功处理申请人 ${applicantName}，总计: ${totalProcessedCount}`)
         
         // 更新处理进度到存储
         if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -300,12 +274,11 @@ function batchProcessDirectly(replyMessage: string) {
               }
             })
           } catch (e) {
-            console.log("更新进度失败:", e)
+            // 更新进度失败 - 静默处理
           }
         }
         
       } catch (error) {
-        console.error(`处理申请人失败:`, error)
         failedCount++
         
         // 尝试关闭可能打开的模态框
@@ -323,7 +296,6 @@ function batchProcessDirectly(replyMessage: string) {
   
   // 主处理函数
   async function startProcessing() {
-    console.log("开始批量处理所有页面")
     
     try {
       while (isProcessing) {
@@ -335,18 +307,15 @@ function batchProcessDirectly(replyMessage: string) {
         // 查找下一页按钮
         const nextButton = findNextPageButton()
         if (!nextButton) {
-          console.log("没有找到下一页按钮，处理完成")
           break
         }
         
-        console.log("点击下一页")
         ;(nextButton as HTMLElement).click()
         
         // 等待页面加载
         await new Promise(resolve => setTimeout(resolve, 3000))
       }
       
-      console.log(`批量处理完成! 总计处理: ${totalProcessedCount} 个申请人，失败: ${failedCount} 个`)
       
       // 更新完成状态
       if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -364,12 +333,11 @@ function batchProcessDirectly(replyMessage: string) {
         try {
           chrome.runtime.sendMessage({ action: 'updatePageStats' })
         } catch (e) {
-          console.log("发送更新消息失败:", e)
+          // 发送更新消息失败 - 静默处理
         }
       }
       
     } catch (error) {
-      console.error("批量处理过程中发生错误:", error)
       
       if (typeof chrome !== 'undefined' && chrome.storage) {
         await chrome.storage.local.set({

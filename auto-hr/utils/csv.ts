@@ -1,12 +1,18 @@
 import type { Applicant } from "../types"
-import { CSV_CONFIG } from "../constants"
 
 /**
  * CSV 导出工具函数
  */
 
+// CSV导出配置
+const CSV_CONFIG = {
+  HEADERS: ['姓名', '手机号', '邮箱', '年龄', '现居地', '投递职位', '求职意向', '在线简历', '申请时间'],
+  BOM: '\ufeff', // UTF-8 BOM for Excel compatibility
+  MIME_TYPE: 'text/csv;charset=utf-8;'
+}
+
 // 生成 CSV 内容
-export const generateCSV = (applicants: Applicant[]): string => {
+const generateCSV = (applicants: Applicant[]): string => {
   const rows = applicants.map(applicant => [
     applicant.name || '',
     applicant.phone || '',
@@ -27,12 +33,12 @@ export const generateCSV = (applicants: Applicant[]): string => {
 }
 
 // 创建 CSV 下载 Blob
-export const createCSVBlob = (csvContent: string): Blob => {
+const createCSVBlob = (csvContent: string): Blob => {
   return new Blob([CSV_CONFIG.BOM + csvContent], { type: CSV_CONFIG.MIME_TYPE })
 }
 
 // 生成文件名
-export const generateFileName = (prefix: string = 'hr_applicants'): string => {
+const generateFileName = (prefix: string = 'hr_applicants'): string => {
   const date = new Date().toISOString().split('T')[0]
   return `${prefix}_${date}.csv`
 }
@@ -94,21 +100,3 @@ export const validateCSVData = (applicants: Applicant[]): {
   }
 }
 
-// 获取 CSV 统计信息
-export const getCSVStats = (applicants: Applicant[]): {
-  total: number
-  withPhone: number
-  withEmail: number
-  withBoth: number
-  withPosition: number
-  withJobIntention: number
-} => {
-  return {
-    total: applicants.length,
-    withPhone: applicants.filter(a => a.phone).length,
-    withEmail: applicants.filter(a => a.email).length,
-    withBoth: applicants.filter(a => a.phone && a.email).length,
-    withPosition: applicants.filter(a => a.position).length,
-    withJobIntention: applicants.filter(a => a.jobIntention).length
-  }
-}

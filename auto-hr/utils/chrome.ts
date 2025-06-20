@@ -16,7 +16,6 @@ export const getCurrentTab = async (): Promise<chrome.tabs.Tab | null> => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     return tab || null
   } catch (error) {
-    console.error('获取当前标签页失败:', error)
     return null
   }
 }
@@ -29,7 +28,6 @@ export const storage = {
       const result = await chrome.storage.local.get(keys)
       return result as Pick<StorageData, K>
     } catch (error) {
-      console.error('获取存储数据失败:', error)
       return {} as Pick<StorageData, K>
     }
   },
@@ -40,7 +38,6 @@ export const storage = {
       await chrome.storage.local.set(data)
       return true
     } catch (error) {
-      console.error('设置存储数据失败:', error)
       return false
     }
   },
@@ -51,7 +48,6 @@ export const storage = {
       await chrome.storage.local.remove(keys)
       return true
     } catch (error) {
-      console.error('删除存储数据失败:', error)
       return false
     }
   },
@@ -62,7 +58,6 @@ export const storage = {
       await chrome.storage.local.clear()
       return true
     } catch (error) {
-      console.error('清空存储数据失败:', error)
       return false
     }
   }
@@ -79,10 +74,8 @@ export const messaging = {
       // 内容脚本未加载的常见错误
       if (error.message?.includes('Could not establish connection') || 
           error.message?.includes('Receiving end does not exist')) {
-        console.log('内容脚本未加载或标签页已关闭')
         return null
       }
-      console.error('发送消息到标签页失败:', error)
       throw error
     }
   },
@@ -163,7 +156,6 @@ export const scripting = {
 
       return results && results[0] && results[0].result ? results[0].result : null
     } catch (error) {
-      console.error('执行脚本失败:', error)
       throw error
     }
   },
@@ -172,16 +164,12 @@ export const scripting = {
   async detectPageElements(tabId: number): Promise<any> {
     return this.executeFunction(tabId, () => {
       // 检查内容脚本是否已加载
-      if ((window as any).__hrAutomationLoaded) {
-        console.log('✅ 内容脚本已加载但未响应消息')
-      }
       
       // 手动检测页面元素
       const cards = document.querySelectorAll('.resume-item')
       const nameElements = document.querySelectorAll('.resume-info__center-name')
       const buttons = document.querySelectorAll('.resume-info__right button')
       
-      console.log(`找到元素: ${cards.length} 个卡片, ${nameElements.length} 个姓名, ${buttons.length} 个按钮`)
       
       // 检查页码信息
       let currentPageNum = 1
@@ -212,9 +200,6 @@ export const scripting = {
   // 调试页面结构
   async debugPageStructure(tabId: number): Promise<any> {
     return this.executeFunction(tabId, () => {
-      console.log('=== 页面调试信息 ===')
-      console.log('URL:', window.location.href)
-      console.log('Title:', document.title)
       
       const selectors = [
         '.resume-item',
@@ -232,10 +217,8 @@ export const scripting = {
         try {
           const elements = document.querySelectorAll(selector)
           results[selector] = elements.length
-          console.log(`${selector}: ${elements.length} 个元素`)
         } catch (e: any) {
           results[selector] = `错误: ${e.message}`
-          console.log(`${selector}: 错误 - ${e.message}`)
         }
       })
       
@@ -245,9 +228,7 @@ export const scripting = {
         el.textContent?.includes('沟通')
       ).length
       results['包含沟通文本的元素'] = contactElements
-      console.log('包含"沟通"文本的元素:', contactElements)
       
-      console.log('Body classes:', document.body.className)
       return results
     })
   }
@@ -270,19 +251,3 @@ export const storageListener = {
   }
 }
 
-// 消息监听器管理
-export const messageListener = {
-  // 添加消息监听器
-  addListener(callback: (request: any, sender: any, sendResponse: any) => void): void {
-    if (chrome.runtime?.onMessage) {
-      chrome.runtime.onMessage.addListener(callback)
-    }
-  },
-
-  // 移除消息监听器
-  removeListener(callback: (request: any, sender: any, sendResponse: any) => void): void {
-    if (chrome.runtime?.onMessage) {
-      chrome.runtime.onMessage.removeListener(callback)
-    }
-  }
-}

@@ -28,7 +28,6 @@ export const useDataManager = () => {
       setReplyMessage(config.autoReply.replyMessage)
       setStatus(STATUS_MESSAGES.DATA_LOADED)
     } catch (error: any) {
-      console.error('加载数据失败:', error)
       setStatus(`加载失败: ${error.message}`)
     }
   }
@@ -48,7 +47,6 @@ export const useDataManager = () => {
         setReplyMessage(newReplyMessage)
       }
     } catch (error: any) {
-      console.error('保存配置失败:', error)
       setStatus(`保存配置失败: ${error.message}`)
     }
   }
@@ -77,7 +75,6 @@ export const useDataManager = () => {
       const data = await storage.get([STORAGE_KEYS.APPLICANTS])
       return data[STORAGE_KEYS.APPLICANTS] || []
     } catch (error: any) {
-      console.error('获取申请人数据失败:', error)
       return []
     }
   }
@@ -90,7 +87,6 @@ export const useDataManager = () => {
         if (changes[STORAGE_KEYS.APPLICANTS]) {
           const newApplicants: Applicant[] = changes[STORAGE_KEYS.APPLICANTS].newValue || []
           setApplicantCount(newApplicants.length)
-          console.log(`数据已更新，当前总计: ${newApplicants.length} 条`)
         }
 
         // 监听配置变化
